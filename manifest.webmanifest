@@ -1,9 +1,26 @@
 {
-  "name": "MultiFlash",
+  "name": "MultiFlash · Matemáticas",
   "short_name": "MultiFlash",
+  "description": "Practica las tablas de multiplicar con repetición espaciada",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#020617",
   "theme_color": "#020617",
-  "icons": []
+  "lang": "es",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
