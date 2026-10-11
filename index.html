@@ -13,7 +13,7 @@
   <!-- iOS: look nativo -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="MultiFlash">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="512x512" href="apple-touch-icon.png">
@@ -26,11 +26,10 @@
 
   <!-- SheetJS: exportación a Excel (local, funciona offline) -->
   <script src="js/lib/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <link rel="stylesheet" href="css/app.css">
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white">
+<body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white" style="min-height: 100dvh;">
 
   <!-- ================= LOGIN ================= -->
   <div id="screen-login" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center p-4 hidden">
@@ -87,7 +86,7 @@
   <!-- ================= APP ================= -->
   <div id="app-content" class="flex flex-col min-h-screen hidden">
 
-    <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur">
+    <header class="bg-slate-900/95 border-b border-slate-800 sticky top-0 z-40 backdrop-blur" style="padding-top: env(safe-area-inset-top);">
       <div class="max-w-4xl mx-auto px-3 h-16 flex items-center justify-between">
         <div class="flex items-center space-x-2">
           <button id="btn-home" class="hidden bg-slate-800 hover:bg-slate-700 border border-slate-700 w-9 h-9 rounded-xl items-center justify-center text-white transition" title="Volver">
@@ -120,7 +119,7 @@
       </div>
     </header>
 
-    <main class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col items-center">
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col items-center" style="padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right));">
 
       <!-- PANTALLA HOME -->
       <section id="section-HOME" class="w-full max-w-2xl">
