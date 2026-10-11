@@ -167,7 +167,9 @@ function openReviewModal() {
 
 function startGame(topicId, forcedTopicId) {
   state.activeTopicId = topicId;
-  state.forcedTopicId = forcedTopicId;
+  // Cuando entras por una tarjeta de tema (no por Repasar),
+  // forzamos ese tema para que la sesión NO mezcle con otros.
+  state.forcedTopicId = forcedTopicId || topicId;
   state.session = { correct: 0, errors: 0, streak: 0 };
   updateHUD();
   showScreen('GAME');
@@ -179,10 +181,12 @@ function initUI() {
     btn.addEventListener('click', () => switchMode(btn.dataset.mode));
   });
 
-  document.getElementById('btn-home').addEventListener('click', () => {
-    showScreen('HOME');
-    renderTopicsGrid();
-  });
+document.getElementById('btn-home').addEventListener('click', () => {
+  state.forcedTopicId = null;
+  state.activeTopicId = null;
+  showScreen('HOME');
+  renderTopicsGrid();
+});
   document.getElementById('btn-config').addEventListener('click', () => {
     document.getElementById('config-modal').classList.remove('hidden');
   });
