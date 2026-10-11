@@ -13,7 +13,9 @@ export function initLogin({ onSuccess }) {
   const signForm  = document.getElementById('signup-form');
   const signErr   = document.getElementById('signup-error');
 
-  const urlSetup = new URLSearchParams(location.search).get('setup') === '1';
+  const params = new URLSearchParams(location.search);
+  const hash = location.hash.replace('#', '');
+  const urlSetup = params.get('setup') === '1' || hash === 'setup=1';
   if (urlSetup) setupWrap.classList.remove('hidden');
 
   showBtn?.addEventListener('click', () => {
