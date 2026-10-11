@@ -1,12 +1,26 @@
 export default {
   id: 'tablas',
-  nombre: 'Tablas de multiplicar',
+  nombre: 'Tablas',
+  nombreLargo: 'Tablas de multiplicar',
   icon: '×',
   color: 'indigo',
 
-  units() {
+  // Niveles que el padre puede marcar/desmarcar (1..12)
+  levels() {
     const out = [];
-    for (let a = 1; a <= 10; a++) for (let b = 1; b <= 10; b++) out.push({ a, b });
+    for (let i = 1; i <= 12; i++) {
+      out.push({ id: i, label: `Tabla del ${i}` });
+    }
+    return out;
+  },
+
+  // Operaciones generadas a partir de los niveles activos
+  units(activeLevels) {
+    const out = [];
+    const levels = (activeLevels && activeLevels.length) ? activeLevels : [1,2,3,4,5,6,7,8,9,10,11,12];
+    for (const a of levels) {
+      for (let b = 1; b <= 12; b++) out.push({ a, b });
+    }
     return out;
   },
 
