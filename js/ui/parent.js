@@ -1,5 +1,5 @@
 import { listChildren, createChild, registerChildUnderParent } from '../auth.js';
-import { loadProgress, saveProgress, invalidateCache } from '../storage.js';
+import { loadProgress, saveProgress, invalidateCache, flushProgress } from '../storage.js';
 
 let ctx = null;
 let currentUserId = null;
@@ -163,11 +163,15 @@ function renderTopicsList(uid, prog) {
   const plan = prog.plan || { order: [], topics: {} };
 
   const allTopicIds = Object.keys(ctx.topicsMap);
+  let planChanged = false;
   for (const id of allTopicIds) {
-    if (!plan.order.includes(id)) plan.order.push(id);
-    if (!plan.topics[id]) plan.topics[id] = { enabled: false, activeLevels: null };
+    if (!plan.order.includes(id)) { plan.order.push(id); planChanged = true; }
+    if (!plan.topics[id]) { plan.topics[id] = { enabled: false, activeLevels: null }; planChanged = true; }
   }
   prog.plan = plan;
+  if (planChanged) {
+    saveProgress(uid, prog);
+  }
 
   plan.order.forEach((topicId, index) => {
     const t = ctx.topicsMap[topicId];
@@ -196,24 +200,27 @@ function renderTopicsList(uid, prog) {
       </div>
     `;
 
-    row.querySelector('[data-toggle]').onclick = () => {
+    row.querySelector('[data-toggle]').onclick = async () => {
       cfg.enabled = !cfg.enabled;
       saveProgress(uid, prog);
+      await flushProgress(uid);
       renderTopicsList(uid, prog);
     };
     row.querySelector('[data-config]').onclick = () => openLevelsModal(uid, topicId, t, cfg);
-    row.querySelector('[data-up]').onclick = () => {
+    row.querySelector('[data-up]').onclick = async () => {
       if (index === 0) return;
       const arr = plan.order;
       [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
       saveProgress(uid, prog);
+      await flushProgress(uid);
       renderTopicsList(uid, prog);
     };
-    row.querySelector('[data-down]').onclick = () => {
+    row.querySelector('[data-down]').onclick = async () => {
       if (index === plan.order.length - 1) return;
       const arr = plan.order;
       [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
       saveProgress(uid, prog);
+      await flushProgress(uid);
       renderTopicsList(uid, prog);
     };
 
@@ -231,7 +238,6 @@ function openLevelsModal(uid, topicId, topic, cfg) {
   const levels = topic.levels();
   const active = cfg.activeLevels || levels.map(l => l.id);
 
-  // Agrupamos por .group (si existe)
   const groups = {};
   for (const lvl of levels) {
     const g = lvl.group || 'Otros';
@@ -297,6 +303,7 @@ function openLevelsModal(uid, topicId, topic, cfg) {
     if (!prog.plan.topics[topicId]) prog.plan.topics[topicId] = { enabled: true, activeLevels: null };
     prog.plan.topics[topicId].activeLevels = selected;
     saveProgress(uid, prog);
+    await flushProgress(uid);
     modal.classList.add('hidden');
     renderStats(uid);
   };
@@ -321,7 +328,6 @@ function renderBottlenecks(stats) {
   const items = [];
   for (const [k, s] of Object.entries(stats)) {
     if (!s.attempts) continue;
-    // clave nueva: topic:level:op
     const parts = k.split(':');
     if (parts.length < 3) continue;
     const [, levelId, opKey] = parts;
@@ -371,6 +377,7 @@ async function importJSON(uid) {
       };
       invalidateCache(uid);
       saveProgress(uid, prog);
+      await flushProgress(uid);
       setTimeout(() => renderStats(uid), 2000);
       alert('Progreso importado. Se subirá a la nube en unos segundos.');
     } catch (e) {
