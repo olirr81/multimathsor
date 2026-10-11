@@ -322,11 +322,11 @@ function renderQuizOptions() {
   const cont = document.getElementById('quiz-options');
   cont.innerHTML = '';
 
-  // En quiz, si el inputMode es numeric, generamos distractores numéricos.
-  // Si es choice, usamos las choices del propio item.
   let opts;
   if (c.inputMode === 'choice') {
     opts = c.item.choices;
+  } else if (typeof c.topic.distractors === 'function') {
+    opts = c.topic.distractors(c.item);
   } else {
     opts = generateNumericDistractors(c.item.answer);
   }
@@ -343,7 +343,6 @@ function renderQuizOptions() {
     cont.appendChild(btn);
   }
 }
-
 function generateNumericDistractors(correct) {
   const s = new Set([correct]);
   while (s.size < 4) {
