@@ -4,33 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#020617">
-
   <title>MultiFlash · Matemáticas</title>
   <meta name="description" content="Practica las tablas de multiplicar">
-
-  <!-- Manifest PWA -->
   <link rel="manifest" href="manifest.webmanifest">
-
-  <!-- iOS: look nativo -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MultiFlash">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="512x512" href="apple-touch-icon.png">
-
-  <!-- Favicon (escritorio / Android) -->
   <link rel="icon" type="image/png" sizes="512x512" href="apple-touch-icon.png">
-
-  <!-- CDNs -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white">
 
+  <!-- ================= LOGIN ================= -->
   <div id="screen-login" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
       <div class="flex flex-col items-center mb-6">
@@ -79,20 +70,29 @@
     </div>
   </div>
 
+  <!-- ================= LOADING ================= -->
   <div id="screen-loading" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center">
     <i class="fa-solid fa-circle-notch fa-spin text-3xl text-indigo-400"></i>
   </div>
 
+  <!-- ================= APP ================= -->
   <div id="app-content" class="flex flex-col min-h-screen hidden">
+
     <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur">
       <div class="max-w-4xl mx-auto px-3 h-16 flex items-center justify-between">
         <div class="flex items-center space-x-2">
-          <div class="bg-gradient-to-tr from-indigo-500 to-violet-600 w-9 h-9 rounded-xl flex items-center justify-center text-white font-black">×</div>
+          <button id="btn-home" class="hidden bg-gradient-to-tr from-indigo-500 to-violet-600 w-9 h-9 rounded-xl items-center justify-center text-white font-black">
+            ×
+          </button>
+          <div class="bg-gradient-to-tr from-indigo-500 to-violet-600 w-9 h-9 rounded-xl flex items-center justify-center text-white font-black" id="brand-icon">
+            ×
+          </div>
           <div class="leading-tight">
             <div class="font-black text-sm bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">MultiFlash</div>
             <div id="header-user" class="text-[10px] text-slate-400">—</div>
           </div>
         </div>
+
         <nav class="flex items-center gap-1">
           <button data-mode="A" class="mode-tab px-2.5 py-1.5 rounded-xl text-xs font-bold transition">
             <i class="fa-solid fa-keyboard"></i><span class="hidden sm:inline ml-1">Flash</span>
@@ -114,52 +114,72 @@
     </header>
 
     <main class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col items-center">
-      <div id="game-hud" class="w-full max-w-md flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-2.5 mb-4">
-        <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Aciertos</span><span id="hud-correct" class="text-base font-black text-emerald-400">0</span></div>
-        <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Racha</span><span id="hud-streak" class="text-base font-black text-amber-400">🔥 0</span></div>
-        <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Errores</span><span id="hud-errors" class="text-base font-black text-rose-400">0</span></div>
-      </div>
 
-      <section id="section-A" class="w-full max-w-md flex flex-col items-center">
-        <div id="card-container" class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center relative overflow-hidden transition-all">
-          <span class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/50 mb-3">Evocación Pura</span>
-          <div id="modeA-op" class="text-6xl sm:text-7xl font-black tracking-tight text-white mb-2"></div>
-          <div id="modeA-display" class="w-36 h-14 bg-slate-950 border-2 border-slate-700 rounded-2xl flex items-center justify-center text-3xl font-black text-indigo-300 my-2 tracking-widest">?</div>
-          <p id="modeA-hint" class="text-xs text-slate-400 mt-1 min-h-[1.25rem]">Introduce el resultado</p>
-          <button id="btn-reveal" class="mt-3 text-xs text-amber-400 hover:underline hidden">
-            <i class="fa-solid fa-eye mr-1"></i> Ver solución
-          </button>
-        </div>
-        <div id="numpad-A" class="w-full max-w-xs grid grid-cols-3 gap-2 mt-5"></div>
+      <!-- ================= PANTALLA TEMAS ================= -->
+      <section id="section-HOME" class="w-full max-w-2xl">
+        <h2 class="text-lg font-black text-white mb-1">¿Qué practicamos hoy?</h2>
+        <p class="text-xs text-slate-400 mb-5">Elige un tema o dale a Repasar para practicar algo concreto.</p>
+
+        <div id="topics-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
       </section>
 
-      <section id="section-B" class="w-full max-w-md flex flex-col items-center hidden">
-        <div class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl mb-6">
-          <span class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50 mb-3 inline-block">Modo Arcade</span>
-          <div id="modeB-op" class="text-6xl font-black text-white my-2"></div>
-          <p class="text-xs text-slate-400">Toca la respuesta correcta</p>
+      <!-- ================= PANTALLA JUEGO ================= -->
+      <section id="section-GAME" class="w-full flex flex-col items-center hidden">
+
+        <div id="game-hud" class="w-full max-w-md flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-2.5 mb-4">
+          <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Aciertos</span><span id="hud-correct" class="text-base font-black text-emerald-400">0</span></div>
+          <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Racha</span><span id="hud-streak" class="text-base font-black text-amber-400">🔥 0</span></div>
+          <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Errores</span><span id="hud-errors" class="text-base font-black text-rose-400">0</span></div>
         </div>
-        <div id="quiz-options" class="grid grid-cols-2 gap-3 w-full"></div>
+
+        <!-- MODO A -->
+        <div id="section-A" class="w-full max-w-md flex flex-col items-center">
+          <div id="card-container" class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center relative overflow-hidden transition-all">
+            <span id="card-topic-tag" class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/50 mb-3">Evocación Pura</span>
+            <div id="modeA-op" class="text-6xl sm:text-7xl font-black tracking-tight text-white mb-2"></div>
+            <div id="modeA-display" class="w-36 h-14 bg-slate-950 border-2 border-slate-700 rounded-2xl flex items-center justify-center text-3xl font-black text-indigo-300 my-2 tracking-widest">?</div>
+            <p id="modeA-hint" class="text-xs text-slate-400 mt-1 min-h-[1.25rem]">Introduce el resultado</p>
+            <button id="btn-reveal" class="mt-3 text-xs text-amber-400 hover:underline hidden">
+              <i class="fa-solid fa-eye mr-1"></i> Ver solución
+            </button>
+          </div>
+          <div id="numpad-A" class="w-full max-w-xs grid grid-cols-3 gap-2 mt-5"></div>
+        </div>
+
+        <!-- MODO B -->
+        <div id="section-B" class="w-full max-w-md flex flex-col items-center hidden">
+          <div class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl mb-6">
+            <span id="card-topic-tag-B" class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50 mb-3 inline-block">Modo Arcade</span>
+            <div id="modeB-op" class="text-6xl font-black text-white my-2"></div>
+            <p class="text-xs text-slate-400">Toca la respuesta correcta</p>
+          </div>
+          <div id="quiz-options" class="grid grid-cols-2 gap-3 w-full"></div>
+        </div>
+
+        <!-- MODO C -->
+        <div id="section-C" class="w-full max-w-md flex flex-col items-center hidden">
+          <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-4 flex items-center justify-between">
+            <label class="text-xs font-bold text-slate-300">Tabla:</label>
+            <select id="exam-table-select" class="bg-slate-950 border border-slate-700 text-indigo-300 text-sm font-bold rounded-xl px-3 py-1.5 outline-none">
+              <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+              <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+              <option>11</option><option>12</option>
+            </select>
+          </div>
+          <div id="exam-container" class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl relative">
+            <span class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/50 mb-3 inline-block">Examen</span>
+            <div id="modeC-op" class="text-6xl font-black text-white mb-2"></div>
+            <div id="modeC-display" class="w-36 h-14 bg-slate-950 border-2 border-slate-700 rounded-2xl flex items-center justify-center text-3xl font-black text-emerald-300 my-2 tracking-widest mx-auto">?</div>
+            <p id="modeC-hint" class="text-xs text-slate-400 mt-1 min-h-[1.25rem]">Escribe la respuesta</p>
+          </div>
+          <div id="numpad-C" class="w-full max-w-xs grid grid-cols-3 gap-2 mt-5"></div>
+        </div>
+
       </section>
 
-      <section id="section-C" class="w-full max-w-md flex flex-col items-center hidden">
-        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-4 flex items-center justify-between">
-          <label class="text-xs font-bold text-slate-300">Tabla:</label>
-          <select id="exam-table-select" class="bg-slate-950 border border-slate-700 text-indigo-300 text-sm font-bold rounded-xl px-3 py-1.5 outline-none">
-            <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
-            <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
-          </select>
-        </div>
-        <div id="exam-container" class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl relative">
-          <span class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/50 mb-3 inline-block">Examen</span>
-          <div id="modeC-op" class="text-6xl font-black text-white mb-2"></div>
-          <div id="modeC-display" class="w-36 h-14 bg-slate-950 border-2 border-slate-700 rounded-2xl flex items-center justify-center text-3xl font-black text-emerald-300 my-2 tracking-widest mx-auto">?</div>
-          <p id="modeC-hint" class="text-xs text-slate-400 mt-1 min-h-[1.25rem]">Escribe la respuesta</p>
-        </div>
-        <div id="numpad-C" class="w-full max-w-xs grid grid-cols-3 gap-2 mt-5"></div>
-      </section>
-
+      <!-- ================= PANEL PADRES ================= -->
       <section id="section-PARENT" class="w-full max-w-3xl flex flex-col gap-5 hidden"></section>
+
     </main>
 
     <footer class="py-3 text-center text-xs text-slate-500 border-t border-slate-800/60">
@@ -167,6 +187,7 @@
     </footer>
   </div>
 
+  <!-- ================= MODAL CONFIG ================= -->
   <div id="config-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 shadow-2xl">
       <h3 class="text-lg font-black text-white mb-4 text-center">Configuración</h3>
@@ -182,6 +203,7 @@
     </div>
   </div>
 
+  <!-- ================= MODAL AÑADIR HIJO ================= -->
   <div id="add-child-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
       <h3 class="text-lg font-black text-white mb-4 text-center">Añadir hijo</h3>
@@ -201,6 +223,7 @@
     </div>
   </div>
 
+  <!-- ================= MODAL DETALLE OPERACIÓN ================= -->
   <div id="detail-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-center">
       <h3 id="modal-op-title" class="text-2xl font-black text-white mb-2"></h3>
@@ -212,6 +235,30 @@
         <div class="flex justify-between"><span>Estado:</span> <strong id="modal-op-status" class="text-indigo-400"></strong></div>
       </div>
       <button id="modal-close" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- ================= MODAL NIVELES DE TEMA ================= -->
+  <div id="levels-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-5 shadow-2xl">
+      <h3 id="levels-modal-title" class="text-lg font-black text-white mb-1 text-center"></h3>
+      <p class="text-xs text-slate-400 text-center mb-4">Marca qué niveles practicará.</p>
+      <div id="levels-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-4"></div>
+      <div class="flex gap-2">
+        <button id="levels-select-all" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition">Todas</button>
+        <button id="levels-select-none" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition">Ninguna</button>
+        <button id="levels-close" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL REPASAR (elegir tema) ================= -->
+  <div id="review-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-5 shadow-2xl">
+      <h3 class="text-lg font-black text-white mb-1 text-center">Repasar un tema</h3>
+      <p class="text-xs text-slate-400 text-center mb-4">Elige un tema para practicarlo puntualmente.</p>
+      <div id="review-topics-list" class="space-y-2 mb-4"></div>
+      <button id="review-cancel" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition">Cancelar</button>
     </div>
   </div>
 
