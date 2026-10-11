@@ -4,7 +4,7 @@ import { loadProgress, saveProgress, invalidateCache } from '../storage.js';
 let ctx = null;
 let currentUserId = null;
 let currentViewUid = null;
-let childrenCache = [];
+let levelsModalTopicId = null;
 
 export function initParentPanel(context) {
   ctx = context;
@@ -17,8 +17,17 @@ export function initParentPanel(context) {
   });
   document.getElementById('add-child-form').addEventListener('submit', handleAddChild);
 
-  document.getElementById('levels-select-all').addEventListener('click', () => toggleAllLevels(true));
-  document.getElementById('levels-select-none').addEventListener('click', () => toggleAllLevels(false));
+  document.getElementById('levels-select-all').addEventListener('click', () => {
+    const all = document.querySelectorAll('#levels-grid button[data-level]');
+    all.forEach(b => b.dataset.on = '1');
+    repaintLevelsGrid();
+  });
+  document.getElementById('levels-select-none').addEventListener('click', () => {
+    const all = document.querySelectorAll('#levels-grid button[data-level]');
+    all.forEach(b => b.dataset.on = '0');
+    repaintLevelsGrid();
+  });
+  document.getElementById('levels-close').addEventListener('click', saveLevels);
 
   window.addEventListener('mf:open-parent', () => openPanel());
 }
@@ -32,7 +41,6 @@ async function openPanel() {
   ctx.showScreen('PARENT');
 
   const children = await listChildren(user.uid);
-  childrenCache = children;
 
   const options = [
     { uid: user.uid, displayName: 'Yo (progenitor)', role: 'parent' },
@@ -154,7 +162,7 @@ async function renderStats(uid) {
       <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
         <i class="fa-solid fa-fire text-amber-400"></i> Mapa de calor (Tablas)
       </h3>
-      <p class="text-xs text-slate-400 mb-4">Solo se muestran las operaciones de tablas. Toca cualquier celda para ver detalle.</p>
+      <p class="text-xs text-slate-400 mb-4">Toca cualquier celda para ver detalle.</p>
       <div class="overflow-x-auto">
         <div id="p-heatmap" class="grid grid-cols-12 gap-1 min-w-[480px]"></div>
       </div>
@@ -178,20 +186,18 @@ function renderTopicsList(uid, prog) {
   cont.innerHTML = '';
   const plan = prog.plan || { order: [], topics: {} };
 
-  // Aseguramos que todos los temas disponibles están en order
   const allTopicIds = Object.keys(ctx.topicsMap);
   for (const id of allTopicIds) {
     if (!plan.order.includes(id)) plan.order.push(id);
     if (!plan.topics[id]) plan.topics[id] = { enabled: false, activeLevels: null };
   }
+  prog.plan = plan;
 
   plan.order.forEach((topicId, index) => {
     const t = ctx.topicsMap[topicId];
     if (!t) return;
     const cfg = plan.topics[topicId];
     const levels = t.levels();
-
-    // Cuenta de niveles activos
     const activeCount = cfg.activeLevels ? cfg.activeLevels.length : levels.length;
     const levelsLabel = `${activeCount}/${levels.length} niveles`;
 
@@ -205,4 +211,217 @@ function renderTopicsList(uid, prog) {
         <div class="text-sm font-bold text-white">${t.nombre}</div>
         <div class="text-[10px] text-slate-400">${cfg.enabled ? levelsLabel : 'Desactivado'}</div>
       </div>
-      <button data-config class="px-3 py-2 text-xs font-bold rounded-xl ${cfg.enabled ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate
+      <button data-config class="px-3 py-2 text-xs font-bold rounded-xl ${cfg.enabled ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate-900 text-slate-600 border border-slate-800'}" ${cfg.enabled ? '' : 'disabled'}>
+        <i class="fa-solid fa-sliders"></i>
+      </button>
+      <div class="flex flex-col">
+        <button data-up class="px-2 text-slate-400 hover:text-white text-[10px]" ${index === 0 ? 'disabled' : ''}>▲</button>
+        <button data-down class="px-2 text-slate-400 hover:text-white text-[10px]" ${index === plan.order.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+    `;
+
+    row.querySelector('[data-toggle]').onclick = () => {
+      cfg.enabled = !cfg.enabled;
+      saveProgress(uid, prog);
+      renderTopicsList(uid, prog);
+    };
+    row.querySelector('[data-config]').onclick = () => {
+      if (!cfg.enabled) return;
+      openLevelsModal(uid, topicId, t, cfg);
+    };
+    row.querySelector('[data-up]').onclick = () => {
+      if (index === 0) return;
+      const arr = plan.order;
+      [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+      saveProgress(uid, prog);
+      renderTopicsList(uid, prog);
+    };
+    row.querySelector('[data-down]').onclick = () => {
+      if (index === plan.order.length - 1) return;
+      const arr = plan.order;
+      [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
+      saveProgress(uid, prog);
+      renderTopicsList(uid, prog);
+    };
+
+    cont.appendChild(row);
+  });
+}
+
+// ============ MODAL NIVELES ============
+function openLevelsModal(uid, topicId, topic, cfg) {
+  levelsModalTopicId = topicId;
+  const modal = document.getElementById('levels-modal');
+  const title = document.getElementById('levels-modal-title');
+  const grid = document.getElementById('levels-grid');
+
+  title.textContent = `${topic.nombre} — niveles`;
+
+  const levels = topic.levels();
+  const active = cfg.activeLevels || levels.map(l => l.id);
+
+  grid.innerHTML = '';
+  for (const lvl of levels) {
+    const on = active.includes(lvl.id);
+    const btn = document.createElement('button');
+    btn.dataset.level = String(lvl.id);
+    btn.dataset.on = on ? '1' : '0';
+    btn.className = 'px-3 py-2.5 rounded-xl text-xs font-bold transition border';
+    btn.textContent = lvl.label;
+    btn.onclick = () => {
+      btn.dataset.on = btn.dataset.on === '1' ? '0' : '1';
+      repaintLevelsGrid();
+    };
+    grid.appendChild(btn);
+  }
+
+  repaintLevelsGrid();
+
+  document.getElementById('levels-close').onclick = async () => {
+    const selected = [...grid.querySelectorAll('button[data-level]')]
+      .filter(b => b.dataset.on === '1')
+      .map(b => {
+        const raw = b.dataset.level;
+        const n = parseInt(raw, 10);
+        return isNaN(n) ? raw : n;
+      });
+    if (selected.length === 0) {
+      alert('Marca al menos un nivel.');
+      return;
+    }
+    const prog = await loadProgress(uid);
+    if (!prog.plan) prog.plan = { order: [], topics: {} };
+    if (!prog.plan.topics[topicId]) prog.plan.topics[topicId] = { enabled: true, activeLevels: null };
+    prog.plan.topics[topicId].activeLevels = selected;
+    saveProgress(uid, prog);
+    modal.classList.add('hidden');
+    renderStats(uid);
+  };
+
+  modal.classList.remove('hidden');
+}
+
+function repaintLevelsGrid() {
+  const grid = document.getElementById('levels-grid');
+  grid.querySelectorAll('button[data-level]').forEach(b => {
+    const on = b.dataset.on === '1';
+    b.className = `px-3 py-2.5 rounded-xl text-xs font-bold transition border ${
+      on ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+         : 'bg-slate-950 border-slate-800 text-slate-500'
+    }`;
+  });
+}
+
+function saveLevels() {
+  document.getElementById('levels-close').click();
+}
+
+// ============ HEATMAP Y BOTTLENECKS ============
+function renderHeatmap(stats) {
+  const grid = document.getElementById('p-heatmap');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 12; i++) {
+    for (let j = 1; j <= 12; j++) {
+      const key = `tablas:${i}-${j}`;
+      const s = stats[key] || { attempts: 0, correct: 0, errors: 0, totalFirstTouchMs: 0 };
+      let cls = 'bg-slate-950 border-slate-800 text-slate-600';
+      if (s.attempts > 0) {
+        const avgL = (s.totalFirstTouchMs / s.attempts) / 1000;
+        const errRate = s.errors / s.attempts;
+        if (errRate > 0.3) cls = 'bg-rose-950/60 border-rose-800/60 text-rose-300';
+        else if (avgL > 2.5) cls = 'bg-amber-950/60 border-amber-800/60 text-amber-300';
+        else cls = 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300';
+      }
+      const cell = document.createElement('div');
+      cell.className = `aspect-square rounded-md border flex items-center justify-center text-[9px] font-bold cursor-pointer transition hover:scale-110 ${cls}`;
+      cell.textContent = `${i}×${j}`;
+      cell.onclick = () => openOpModal(i, j, s);
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function renderBottlenecks(stats) {
+  const cont = document.getElementById('p-bottlenecks');
+  cont.innerHTML = '';
+  const items = [];
+  for (const [k, s] of Object.entries(stats)) {
+    if (!s.attempts) continue;
+    const [topicId, rest] = k.split(':');
+    if (!rest) continue;
+    const [a, b] = rest.split('-');
+    const avgL = (s.totalFirstTouchMs / s.attempts) / 1000;
+    items.push({ op: `${a} × ${b}`, topic: topicId, errors: s.errors, latency: avgL.toFixed(1), score: s.errors * 25 + avgL });
+  }
+  items.sort((a, b) => b.score - a.score);
+  if (!items.length) {
+    cont.innerHTML = `<p class="text-xs text-slate-500 italic">Sin datos todavía.</p>`;
+    return;
+  }
+  for (const it of items.slice(0, 5)) {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800 text-xs';
+    row.innerHTML = `
+      <span class="font-black text-white text-sm">${it.op}</span>
+      <div class="flex items-center gap-3">
+        <span class="text-rose-400 font-bold"><i class="fa-solid fa-circle-xmark"></i> ${it.errors}</span>
+        <span class="text-amber-400 font-bold"><i class="fa-solid fa-clock"></i> ${it.latency}s</span>
+      </div>`;
+    cont.appendChild(row);
+  }
+}
+
+function openOpModal(a, b, s) {
+  if (!s) s = { attempts: 0, correct: 0, errors: 0, totalFirstTouchMs: 0 };
+  const avg = s.attempts > 0 ? Math.round(s.totalFirstTouchMs / s.attempts) : 0;
+  document.getElementById('modal-op-title').textContent = `${a} × ${b}`;
+  document.getElementById('modal-op-attempts').textContent = s.attempts;
+  document.getElementById('modal-op-correct').textContent = s.correct;
+  document.getElementById('modal-op-errors').textContent = s.errors;
+  document.getElementById('modal-op-latency').textContent = `${avg} ms`;
+  let status = 'Por aprender';
+  if (s.attempts > 0) {
+    const errRate = s.errors / s.attempts;
+    status = errRate > 0.3 ? 'Dificultad alta'
+           : avg > 2500 ? 'Proceso lento'
+           : 'Dominada';
+  }
+  document.getElementById('modal-op-status').textContent = status;
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+
+// ============ EXPORT / IMPORT ============
+async function exportJSON(uid) {
+  const prog = await loadProgress(uid);
+  const blob = new Blob([JSON.stringify({ uid, progress: prog }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `multiflash_${uid.slice(0, 6)}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function importJSON(uid) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const prog = {
+        stats: data.progress?.stats || {},
+        plan: data.progress?.plan || null,
+        activeTables: data.progress?.activeTables || [1, 2, 3, 4, 5]
+      };
+      invalidateCache(uid);
+      saveProgress(uid, prog);
+      setTimeout(() => renderStats(uid), 2000);
+      alert('Progreso importado. Se subirá a la nube en unos segundos.');
+    } catch (e) {
+      alert('JSON inválido.');
+    }
+  };
+  input.click();
+}
