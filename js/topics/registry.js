@@ -1,9 +1,11 @@
 import tablas from './tablas.js';
 import rounding from './rounding.js';
+import numbers from './numbers.js';
 
 const all = {
   tablas,
-  rounding
+  rounding,
+  numbers
 };
 
 export default all;
