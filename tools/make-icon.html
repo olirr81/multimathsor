@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><body style="background:#222;color:#fff;font-family:sans-serif;padding:2rem">
+<h2>Generador de icono MultiFlash</h2>
+<canvas id="c" width="512" height="512" style="border:1px solid #444;border-radius:16px"></canvas>
+<p><button onclick="download()">Descargar PNG 512×512</button></p>
+<script>
+  const c = document.getElementById('c');
+  const x = c.getContext('2d');
+  // Fondo degradado
+  const g = x.createLinearGradient(0, 0, 512, 512);
+  g.addColorStop(0, '#6366f1');
+  g.addColorStop(1, '#8b5cf6');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 512, 512);
+  // Símbolo ×
+  x.fillStyle = '#ffffff';
+  x.font = 'bold 340px -apple-system, system-ui, sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('×', 256, 276);
+  function download() {
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = 'apple-touch-icon.png';
+    a.click();
+  }
+</script></body></html>
