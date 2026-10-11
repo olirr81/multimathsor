@@ -1,9 +1,13 @@
 import { onAuth, loadProfile, signOutUser } from './auth.js';
-import { loadProgress, saveProgress, reloadProgress } from './storage.js';
+import { loadProgress, saveProgress, reloadProgress, commitSession, flushProgress } from './storage.js';
 import { pickNextWithStats, recordAnswer } from './engine.js';
 import topicsMap, { getTopic } from './topics/registry.js';
 import * as LoginUI from './ui/login.js';
 import { initParentPanel } from './ui/parent.js';
+
+const INACTIVITY_MS = 15 * 60 * 1000;   // 15 min
+const ACTIVE_GAP_MS = 2 * 60 * 1000;    // 2 min entre ops para contar como "activa"
+const MAX_ATTEMPTS_PER_SESSION = 200;   // tope de seguridad
 
 const state = {
   user: null,
@@ -19,7 +23,9 @@ const state = {
   cardStartTime: 0,
   firstTouchTime: 0,
   hasTouchedFirstKey: false,
-  locked: false
+  locked: false,
+  // Session tracker
+  tracker: null
 };
 
 initUI();
@@ -98,6 +104,77 @@ function showScreen(screen) {
   document.getElementById('game-hud').classList.toggle('hidden', screen !== 'GAME');
 }
 
+// ============ SESSION TRACKER ============
+function trackerOpen(topicId, topicName) {
+  state.tracker = {
+    id: 's_' + Date.now(),
+    topicId,
+    topicName,
+    startedAt: Date.now(),
+    lastAttemptAt: Date.now(),
+    modes: new Set([state.mode]),
+    operations: 0,
+    correct: 0,
+    errors: 0,
+    totalMs: 0,
+    activeMs: 0,
+    attempts: []
+  };
+}
+
+function trackerAddResult(att) {
+  if (!state.tracker) return;
+  const t = state.tracker;
+  const now = Date.now();
+  const gap = now - t.lastAttemptAt;
+
+  t.operations += 1;
+  if (att.ok) t.correct += 1; else t.errors += 1;
+  t.totalMs += att.ms || 0;
+  t.activeMs += (gap > 0 && gap < ACTIVE_GAP_MS) ? gap : (att.ms || 0);
+  t.lastAttemptAt = now;
+  t.modes.add(state.mode);
+
+  if (t.attempts.length < MAX_ATTEMPTS_PER_SESSION) {
+    t.attempts.push(att);
+  }
+}
+
+async function trackerCommitAndClose() {
+  if (!state.tracker) return;
+  const t = state.tracker;
+  state.tracker = null;
+  if (t.operations < 1) return;
+
+  const session = {
+    id: t.id,
+    topicId: t.topicId,
+    topicName: t.topicName,
+    startedAt: t.startedAt,
+    endedAt: Date.now(),
+    durationSec: Math.round((Date.now() - t.startedAt) / 1000),
+    activeSec: Math.round(t.activeMs / 1000),
+    operations: t.operations,
+    correct: t.correct,
+    errors: t.errors,
+    accuracy: Math.round((t.correct / t.operations) * 100),
+    avgLatencyMs: Math.round(t.totalMs / t.operations),
+    modes: [...t.modes],
+    attempts: t.attempts
+  };
+
+  commitSession(state.progress, session);
+  saveProgress(state.user.uid, state.progress);
+  await flushProgress(state.user.uid);
+}
+
+// Detecta si el intento anterior fue hace demasiado
+function trackerNeedsReset() {
+  if (!state.tracker) return false;
+  return Date.now() - state.tracker.lastAttemptAt > INACTIVITY_MS;
+}
+
+// ============ CUADRÍCULA ============
 function renderTopicsGrid() {
   const grid = document.getElementById('topics-grid');
   grid.innerHTML = '';
@@ -164,7 +241,11 @@ function openReviewModal() {
   document.getElementById('review-modal').classList.remove('hidden');
 }
 
-function startGame(topicId, forcedTopicId) {
+async function startGame(topicId, forcedTopicId) {
+  // Si había una sesión abierta de otro tema, ciérrala
+  if (state.tracker && state.tracker.topicId !== topicId) {
+    await trackerCommitAndClose();
+  }
   state.activeTopicId = topicId;
   state.forcedTopicId = forcedTopicId || topicId;
   state.session = { correct: 0, errors: 0, streak: 0 };
@@ -179,6 +260,7 @@ function initUI() {
   });
 
   document.getElementById('btn-home').addEventListener('click', async () => {
+    await trackerCommitAndClose();
     state.forcedTopicId = null;
     state.activeTopicId = null;
     state.progress = await reloadProgress(state.user.uid);
@@ -192,8 +274,14 @@ function initUI() {
   document.getElementById('btn-config-cancel').addEventListener('click', () => {
     document.getElementById('config-modal').classList.add('hidden');
   });
-  document.getElementById('btn-switch-user').addEventListener('click', async () => { await signOutUser(); location.reload(); });
-  document.getElementById('btn-signout').addEventListener('click', async () => { await signOutUser(); location.reload(); });
+  document.getElementById('btn-switch-user').addEventListener('click', async () => {
+    await trackerCommitAndClose();
+    await signOutUser(); location.reload();
+  });
+  document.getElementById('btn-signout').addEventListener('click', async () => {
+    await trackerCommitAndClose();
+    await signOutUser(); location.reload();
+  });
 
   document.getElementById('review-cancel').addEventListener('click', () => {
     document.getElementById('review-modal').classList.add('hidden');
@@ -208,6 +296,13 @@ function initUI() {
   document.getElementById('btn-reveal').addEventListener('click', revealSolution);
 
   document.getElementById('btn-parent-panel').addEventListener('click', () => openParentPanel(state.user));
+
+  // Cerrar sesión al salir de la pestaña / minimizar
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'hidden' && state.tracker) {
+      await trackerCommitAndClose();
+    }
+  });
 }
 
 function switchMode(mode) {
@@ -231,6 +326,11 @@ function switchMode(mode) {
 }
 
 function nextCard() {
+  // Si la sesión expiró por inactividad, ciérrala
+  if (state.tracker && trackerNeedsReset()) {
+    trackerCommitAndClose();
+  }
+
   const next = pickNextWithStats(
     state.progress.plan,
     topicsMap,
@@ -242,6 +342,11 @@ function nextCard() {
     showScreen('HOME');
     renderTopicsGrid();
     return;
+  }
+
+  // Abre sesión si no hay ninguna
+  if (!state.tracker) {
+    trackerOpen(next.topicId, next.topic.nombre);
   }
 
   state.currentCard = next;
@@ -420,8 +525,7 @@ function clearC(backspace) {
 
 function revealSolution() {
   const c = state.currentCard;
-  const correct = c.item.answer;
-  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${correct}</strong>`;
+  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${c.item.answer}</strong>`;
   document.getElementById('modeA-hint').className = 'text-sm text-indigo-300 font-bold mt-1 min-h-[1.25rem]';
 }
 
@@ -432,7 +536,21 @@ async function evaluate(userAns) {
   const isCorrect = String(userAns) === String(correct);
   const latency = state.firstTouchTime > 0 ? state.firstTouchTime : (Date.now() - state.cardStartTime);
 
+  // Guarda en stats (para el motor adaptativo)
   recordAnswer(state.progress.stats, c.topicId, c.levelId, c.topic, c.item, isCorrect, latency);
+
+  // Guarda en el tracker (para la sesión)
+  trackerAddResult({
+    levelId: c.levelId,
+    prompt: c.item.prompt,
+    answer: correct,
+    given: userAns,
+    ok: isCorrect,
+    ms: latency,
+    mode: state.mode,
+    at: Date.now()
+  });
+
   saveProgress(state.user.uid, state.progress);
 
   const container = state.mode === 'A' ? 'card-container'
