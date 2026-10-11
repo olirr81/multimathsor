@@ -1,13 +1,13 @@
-import { onAuth, loadProfile, signOutUser } from './auth.js';
+import { onAuth, loadProfile, signOutUser, changeOwnPassword } from './auth.js';
 import { loadProgress, saveProgress, reloadProgress, commitSession, flushProgress } from './storage.js';
 import { pickNextWithStats, recordAnswer } from './engine.js';
 import topicsMap, { getTopic } from './topics/registry.js';
 import * as LoginUI from './ui/login.js';
 import { initParentPanel } from './ui/parent.js';
 
-const INACTIVITY_MS = 15 * 60 * 1000;   // 15 min
-const ACTIVE_GAP_MS = 2 * 60 * 1000;    // 2 min entre ops para contar como "activa"
-const MAX_ATTEMPTS_PER_SESSION = 200;   // tope de seguridad
+const INACTIVITY_MS = 15 * 60 * 1000;
+const ACTIVE_GAP_MS = 2 * 60 * 1000;
+const MAX_ATTEMPTS_PER_SESSION = 200;
 
 const state = {
   user: null,
@@ -24,7 +24,6 @@ const state = {
   firstTouchTime: 0,
   hasTouchedFirstKey: false,
   locked: false,
-  // Session tracker
   tracker: null
 };
 
@@ -104,20 +103,15 @@ function showScreen(screen) {
   document.getElementById('game-hud').classList.toggle('hidden', screen !== 'GAME');
 }
 
-// ============ SESSION TRACKER ============
 function trackerOpen(topicId, topicName) {
   state.tracker = {
     id: 's_' + Date.now(),
-    topicId,
-    topicName,
+    topicId, topicName,
     startedAt: Date.now(),
     lastAttemptAt: Date.now(),
     modes: new Set([state.mode]),
-    operations: 0,
-    correct: 0,
-    errors: 0,
-    totalMs: 0,
-    activeMs: 0,
+    operations: 0, correct: 0, errors: 0,
+    totalMs: 0, activeMs: 0,
     attempts: []
   };
 }
@@ -127,17 +121,13 @@ function trackerAddResult(att) {
   const t = state.tracker;
   const now = Date.now();
   const gap = now - t.lastAttemptAt;
-
   t.operations += 1;
   if (att.ok) t.correct += 1; else t.errors += 1;
   t.totalMs += att.ms || 0;
   t.activeMs += (gap > 0 && gap < ACTIVE_GAP_MS) ? gap : (att.ms || 0);
   t.lastAttemptAt = now;
   t.modes.add(state.mode);
-
-  if (t.attempts.length < MAX_ATTEMPTS_PER_SESSION) {
-    t.attempts.push(att);
-  }
+  if (t.attempts.length < MAX_ATTEMPTS_PER_SESSION) t.attempts.push(att);
 }
 
 async function trackerCommitAndClose() {
@@ -145,49 +135,37 @@ async function trackerCommitAndClose() {
   const t = state.tracker;
   state.tracker = null;
   if (t.operations < 1) return;
-
   const session = {
-    id: t.id,
-    topicId: t.topicId,
-    topicName: t.topicName,
-    startedAt: t.startedAt,
-    endedAt: Date.now(),
+    id: t.id, topicId: t.topicId, topicName: t.topicName,
+    startedAt: t.startedAt, endedAt: Date.now(),
     durationSec: Math.round((Date.now() - t.startedAt) / 1000),
     activeSec: Math.round(t.activeMs / 1000),
-    operations: t.operations,
-    correct: t.correct,
-    errors: t.errors,
+    operations: t.operations, correct: t.correct, errors: t.errors,
     accuracy: Math.round((t.correct / t.operations) * 100),
     avgLatencyMs: Math.round(t.totalMs / t.operations),
     modes: [...t.modes],
     attempts: t.attempts
   };
-
   commitSession(state.progress, session);
   saveProgress(state.user.uid, state.progress);
   await flushProgress(state.user.uid);
 }
 
-// Detecta si el intento anterior fue hace demasiado
 function trackerNeedsReset() {
   if (!state.tracker) return false;
   return Date.now() - state.tracker.lastAttemptAt > INACTIVITY_MS;
 }
 
-// ============ CUADRÍCULA ============
 function renderTopicsGrid() {
   const grid = document.getElementById('topics-grid');
   grid.innerHTML = '';
-
   const plan = state.progress.plan;
   const order = plan.order.filter(id => plan.topics[id]?.enabled);
-
   for (const topicId of order) {
     const t = getTopic(topicId);
     if (!t) continue;
     grid.appendChild(makeTopicCard(t));
   }
-
   const review = document.createElement('button');
   review.className = 'bg-slate-900 border-2 border-slate-800 hover:border-slate-700 rounded-3xl p-5 flex flex-col items-center justify-center gap-2 transition active:scale-95 aspect-square';
   review.innerHTML = `
@@ -242,7 +220,6 @@ function openReviewModal() {
 }
 
 async function startGame(topicId, forcedTopicId) {
-  // Si había una sesión abierta de otro tema, ciérrala
   if (state.tracker && state.tracker.topicId !== topicId) {
     await trackerCommitAndClose();
   }
@@ -283,6 +260,33 @@ function initUI() {
     await signOutUser(); location.reload();
   });
 
+  // --- Cambiar mi contraseña ---
+  document.getElementById('btn-change-own-pass').addEventListener('click', () => {
+    document.getElementById('config-modal').classList.add('hidden');
+    document.getElementById('change-own-pass-form').reset();
+    document.getElementById('own-pass-error').textContent = '';
+    document.getElementById('change-own-pass-modal').classList.remove('hidden');
+  });
+  document.getElementById('own-pass-cancel').addEventListener('click', () => {
+    document.getElementById('change-own-pass-modal').classList.add('hidden');
+  });
+  document.getElementById('change-own-pass-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('own-pass-error');
+    errEl.textContent = '';
+    const cur = document.getElementById('own-pass-current').value;
+    const nw  = document.getElementById('own-pass-new').value;
+    const rep = document.getElementById('own-pass-repeat').value;
+    if (nw !== rep) { errEl.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
+    try {
+      await changeOwnPassword(cur, nw);
+      document.getElementById('change-own-pass-modal').classList.add('hidden');
+      alert('Contraseña cambiada correctamente.');
+    } catch (err) {
+      errEl.textContent = translateAuthError(err.code) || err.message || 'Error al cambiar la contraseña.';
+    }
+  });
+
   document.getElementById('review-cancel').addEventListener('click', () => {
     document.getElementById('review-modal').classList.add('hidden');
   });
@@ -294,10 +298,8 @@ function initUI() {
   });
 
   document.getElementById('btn-reveal').addEventListener('click', revealSolution);
-
   document.getElementById('btn-parent-panel').addEventListener('click', () => openParentPanel(state.user));
 
-  // Cerrar sesión al salir de la pestaña / minimizar
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'hidden' && state.tracker) {
       await trackerCommitAndClose();
@@ -305,11 +307,22 @@ function initUI() {
   });
 }
 
+function translateAuthError(code) {
+  const map = {
+    'auth/wrong-password': 'Contraseña actual incorrecta.',
+    'auth/invalid-credential': 'Contraseña actual incorrecta.',
+    'auth/weak-password': 'La nueva contraseña es demasiado corta (mín. 6).',
+    'auth/requires-recent-login': 'Vuelve a entrar y prueba de nuevo.',
+    'auth/too-many-requests': 'Demasiados intentos. Espera un momento.',
+    'auth/user-not-found': 'Usuario no encontrado.'
+  };
+  return map[code] || null;
+}
+
 function switchMode(mode) {
   state.mode = mode;
   state.session = { correct: 0, errors: 0, streak: 0 };
   updateHUD();
-
   document.querySelectorAll('.mode-tab').forEach(b => {
     const on = b.dataset.mode === mode;
     b.className = `mode-tab px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
@@ -317,38 +330,23 @@ function switchMode(mode) {
          : 'text-slate-400 hover:text-white hover:bg-slate-800'
     }`;
   });
-
   ['A', 'B', 'C'].forEach(m => {
     document.getElementById(`section-${m}`).classList.toggle('hidden', m !== mode);
   });
-
   nextCard();
 }
 
 function nextCard() {
-  // Si la sesión expiró por inactividad, ciérrala
   if (state.tracker && trackerNeedsReset()) {
     trackerCommitAndClose();
   }
-
-  const next = pickNextWithStats(
-    state.progress.plan,
-    topicsMap,
-    state.progress.stats || {},
-    state.forcedTopicId
-  );
-
+  const next = pickNextWithStats(state.progress.plan, topicsMap, state.progress.stats || {}, state.forcedTopicId);
   if (!next) {
     showScreen('HOME');
     renderTopicsGrid();
     return;
   }
-
-  // Abre sesión si no hay ninguna
-  if (!state.tracker) {
-    trackerOpen(next.topicId, next.topic.nombre);
-  }
-
+  if (!state.tracker) trackerOpen(next.topicId, next.topic.nombre);
   state.currentCard = next;
   state.currentTyped = '';
   state.hasTouchedFirstKey = false;
@@ -361,7 +359,6 @@ function nextCard() {
 function renderCard() {
   const c = state.currentCard;
   const tag = c.topic.nombre.toUpperCase();
-
   if (state.mode === 'A') {
     document.getElementById('card-topic-tag').textContent = tag;
     renderPromptInto('modeA-op', c);
@@ -385,20 +382,15 @@ function renderCard() {
 
 function renderPromptInto(elId, c) {
   const el = document.getElementById(elId);
-  if (c.topic.render) {
-    el.innerHTML = c.topic.render(c.item, 'text-indigo-400');
-  } else {
-    el.textContent = c.item.prompt;
-  }
+  if (c.topic.render) el.innerHTML = c.topic.render(c.item, 'text-indigo-400');
+  else el.textContent = c.item.prompt;
 }
 
 function renderAnswerInput(slot, c) {
   const displayId = slot === 'A' ? 'modeA-display' : 'modeC-display';
   const numpadId  = slot === 'A' ? 'numpad-A'     : 'numpad-C';
-
   const display = document.getElementById(displayId);
   const numpad = document.getElementById(numpadId);
-
   if (c.inputMode === 'choice') {
     display.classList.add('hidden');
     numpad.className = 'grid grid-cols-2 gap-2 mt-3 w-full';
@@ -407,11 +399,7 @@ function renderAnswerInput(slot, c) {
       const btn = document.createElement('button');
       btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xl font-black py-4 rounded-2xl active:bg-indigo-600 transition text-white';
       btn.textContent = choice;
-      btn.onclick = () => {
-        if (state.locked) return;
-        registerFirstTouch();
-        evaluate(choice);
-      };
+      btn.onclick = () => { if (state.locked) return; registerFirstTouch(); evaluate(choice); };
       numpad.appendChild(btn);
     }
   } else {
@@ -426,25 +414,15 @@ function renderQuizOptions() {
   const c = state.currentCard;
   const cont = document.getElementById('quiz-options');
   cont.innerHTML = '';
-
   let opts;
-  if (c.inputMode === 'choice') {
-    opts = c.item.choices;
-  } else if (typeof c.topic.distractors === 'function') {
-    opts = c.topic.distractors(c.item);
-  } else {
-    opts = generateNumericDistractors(c.item.answer);
-  }
-
+  if (c.inputMode === 'choice') opts = c.item.choices;
+  else if (typeof c.topic.distractors === 'function') opts = c.topic.distractors(c.item);
+  else opts = generateNumericDistractors(c.item.answer);
   for (const v of opts) {
     const btn = document.createElement('button');
     btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-2xl font-black py-4 rounded-2xl active:bg-purple-600 transition text-white shadow-lg';
     btn.textContent = v;
-    btn.onclick = () => {
-      if (state.locked) return;
-      registerFirstTouch();
-      evaluate(v);
-    };
+    btn.onclick = () => { if (state.locked) return; registerFirstTouch(); evaluate(v); };
     cont.appendChild(btn);
   }
 }
@@ -496,16 +474,12 @@ function pressA(d) {
     state.currentTyped += d;
     document.getElementById('modeA-display').textContent = state.currentTyped;
   }
-  if (state.currentTyped.length === expected.length) {
-    evaluate(parseInt(state.currentTyped, 10));
-  }
+  if (state.currentTyped.length === expected.length) evaluate(parseInt(state.currentTyped, 10));
 }
-
 function clearA(backspace) {
   state.currentTyped = backspace ? state.currentTyped.slice(0, -1) : '';
   document.getElementById('modeA-display').textContent = state.currentTyped || '?';
 }
-
 function pressC(d) {
   registerFirstTouch();
   const expected = String(state.currentCard.item.answer);
@@ -513,11 +487,8 @@ function pressC(d) {
     state.currentTyped += d;
     document.getElementById('modeC-display').textContent = state.currentTyped;
   }
-  if (state.currentTyped.length === expected.length) {
-    evaluate(parseInt(state.currentTyped, 10));
-  }
+  if (state.currentTyped.length === expected.length) evaluate(parseInt(state.currentTyped, 10));
 }
-
 function clearC(backspace) {
   state.currentTyped = backspace ? state.currentTyped.slice(0, -1) : '';
   document.getElementById('modeC-display').textContent = state.currentTyped || '?';
@@ -536,57 +507,37 @@ async function evaluate(userAns) {
   const isCorrect = String(userAns) === String(correct);
   const latency = state.firstTouchTime > 0 ? state.firstTouchTime : (Date.now() - state.cardStartTime);
 
-  // Guarda en stats (para el motor adaptativo)
   recordAnswer(state.progress.stats, c.topicId, c.levelId, c.topic, c.item, isCorrect, latency);
-
-  // Guarda en el tracker (para la sesión)
   trackerAddResult({
-    levelId: c.levelId,
-    prompt: c.item.prompt,
-    answer: correct,
-    given: userAns,
-    ok: isCorrect,
-    ms: latency,
-    mode: state.mode,
-    at: Date.now()
+    levelId: c.levelId, prompt: c.item.prompt, answer: correct, given: userAns,
+    ok: isCorrect, ms: latency, mode: state.mode, at: Date.now()
   });
-
   saveProgress(state.user.uid, state.progress);
 
   const container = state.mode === 'A' ? 'card-container'
                    : state.mode === 'B' ? 'quiz-options'
                    : 'exam-container';
-
   if (isCorrect) {
-    state.session.correct++;
-    state.session.streak++;
-    updateHUD();
+    state.session.correct++; state.session.streak++; updateHUD();
     if (window.confetti) confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
     state.locked = true;
     setTimeout(() => nextCard(), 800);
   } else {
-    state.session.errors++;
-    state.session.streak = 0;
-    updateHUD();
+    state.session.errors++; state.session.streak = 0; updateHUD();
     const el = document.getElementById(container);
     el.classList.add('animate-shake');
     setTimeout(() => el.classList.remove('animate-shake'), 400);
-
     if (state.mode === 'A') {
       document.getElementById('modeA-hint').textContent = '¡Casi! Inténtalo de nuevo';
       document.getElementById('modeA-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
       document.getElementById('btn-reveal').classList.remove('hidden');
       state.currentTyped = '';
-      if (c.inputMode === 'numeric') {
-        document.getElementById('modeA-display').textContent = '?';
-      }
+      if (c.inputMode === 'numeric') document.getElementById('modeA-display').textContent = '?';
     } else if (state.mode === 'C') {
       document.getElementById('modeC-hint').textContent = '¡Error!';
       document.getElementById('modeC-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
       state.currentTyped = '';
-      if (c.inputMode === 'numeric') {
-        document.getElementById('modeC-display').textContent = '?';
-      }
+      if (c.inputMode === 'numeric') document.getElementById('modeC-display').textContent = '?';
     } else if (state.mode === 'B') {
       state.locked = true;
       setTimeout(() => nextCard(), 700);
