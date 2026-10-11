@@ -1,3 +1,7 @@
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 export default {
   id: 'tablas',
   nombre: 'Tablas',
@@ -5,42 +9,51 @@ export default {
   icon: '×',
   color: 'indigo',
 
-  // Niveles que el padre puede marcar/desmarcar (1..12)
+  // Todos los niveles son numéricos
   levels() {
     const out = [];
     for (let i = 1; i <= 12; i++) {
-      out.push({ id: i, label: `Tabla del ${i}` });
+      out.push({
+        id: i,
+        label: `Tabla del ${i}`,
+        group: 'Tablas',
+        inputMode: 'numeric'
+      });
     }
     return out;
   },
 
-  // Operaciones generadas a partir de los niveles activos
-  units(activeLevels) {
-    const out = [];
-    const levels = (activeLevels && activeLevels.length) ? activeLevels : [1,2,3,4,5,6,7,8,9,10,11,12];
-    for (const a of levels) {
-      for (let b = 1; b <= 12; b++) out.push({ a, b });
-    }
-    return out;
+  // Genera un enunciado a partir de un id de nivel (1..12)
+  generate(levelId) {
+    const a = levelId;
+    const b = randInt(1, 12);
+    return {
+      prompt: `${a} × ${b}`,
+      answer: a * b,
+      meta: { a, b }
+    };
   },
 
-  render(op, colorClass = 'text-indigo-400') {
-    return `<span>${op.a}</span> <span class="${colorClass}">×</span> <span>${op.b}</span>`;
+  // Para el motor adaptativo: identifica unívocamente la operación
+  // (usa meta si está disponible, si no el enunciado)
+  key(item) {
+    if (item.meta) return `${item.meta.a}-${item.meta.b}`;
+    return String(item.prompt);
   },
 
-  renderPlain(op) { return `${op.a} × ${op.b}`; },
-  solve(op) { return op.a * op.b; },
-  key(op) { return `${op.a}-${op.b}`; },
-
-  distractors(op, correct) {
-    const s = new Set([correct]);
-    s.add((op.a + 1) * op.b);
-    s.add(op.a * Math.max(1, op.b - 1));
-    s.add(op.a + op.b);
-    while (s.size < 4) {
-      const delta = (Math.floor(Math.random() * 5) + 1) * (Math.random() < 0.5 ? 1 : -1);
-      s.add(Math.max(1, correct + delta));
+  // Render bonito del enunciado (opcional, para ampliar)
+  render(item, colorClass = 'text-indigo-400') {
+    if (item.meta) {
+      return `<span>${item.meta.a}</span> <span class="${colorClass}">×</span> <span>${item.meta.b}</span>`;
     }
-    return [...s].slice(0, 4).sort(() => Math.random() - 0.5);
+    return `<span>${item.prompt}</span>`;
+  },
+
+  renderPlain(item) {
+    return item.prompt;
+  },
+
+  solve(item) {
+    return item.answer;
   }
 };
