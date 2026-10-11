@@ -1,5 +1,5 @@
 import { onAuth, loadProfile, signOutUser } from './auth.js';
-import { loadProgress, saveProgress } from './storage.js';
+import { loadProgress, saveProgress, reloadProgress } from './storage.js';
 import { pickNextWithStats, recordAnswer } from './engine.js';
 import topicsMap, { getTopic } from './topics/registry.js';
 import * as LoginUI from './ui/login.js';
@@ -14,8 +14,7 @@ const state = {
   screen: 'HOME',
   activeTopicId: null,
   forcedTopicId: null,
-  currentCard: null,   // { topicId, levelId, inputMode, item, topic }
-  examLevelId: null,
+  currentCard: null,
   currentTyped: '',
   cardStartTime: 0,
   firstTouchTime: 0,
@@ -68,7 +67,7 @@ async function startApp() {
   document.getElementById('header-user').textContent = state.profile.displayName || '';
   document.getElementById('btn-parent-panel').classList.toggle('hidden', state.profile.role !== 'parent');
 
-  state.progress = await loadProgress(state.user.uid);
+  state.progress = await reloadProgress(state.user.uid);
   ensurePlan(state.progress);
   state.session = { correct: 0, errors: 0, streak: 0 };
   updateHUD();
@@ -139,7 +138,7 @@ function makeTopicCard(t) {
     <div class="text-sm font-black text-white">${t.nombre}</div>
     <div class="text-[10px] text-white/70 text-center leading-tight">${t.nombreLargo}</div>
   `;
-  card.onclick = () => startGame(t.id, null);
+  card.onclick = () => startGame(t.id, t.id);
   return card;
 }
 
@@ -167,8 +166,6 @@ function openReviewModal() {
 
 function startGame(topicId, forcedTopicId) {
   state.activeTopicId = topicId;
-  // Cuando entras por una tarjeta de tema (no por Repasar),
-  // forzamos ese tema para que la sesión NO mezcle con otros.
   state.forcedTopicId = forcedTopicId || topicId;
   state.session = { correct: 0, errors: 0, streak: 0 };
   updateHUD();
@@ -181,12 +178,14 @@ function initUI() {
     btn.addEventListener('click', () => switchMode(btn.dataset.mode));
   });
 
-document.getElementById('btn-home').addEventListener('click', () => {
-  state.forcedTopicId = null;
-  state.activeTopicId = null;
-  showScreen('HOME');
-  renderTopicsGrid();
-});
+  document.getElementById('btn-home').addEventListener('click', async () => {
+    state.forcedTopicId = null;
+    state.activeTopicId = null;
+    state.progress = await reloadProgress(state.user.uid);
+    showScreen('HOME');
+    renderTopicsGrid();
+  });
+
   document.getElementById('btn-config').addEventListener('click', () => {
     document.getElementById('config-modal').classList.remove('hidden');
   });
@@ -288,9 +287,6 @@ function renderPromptInto(elId, c) {
   }
 }
 
-// Renderiza el área de respuesta:
-// - numeric: numpad + display "?"
-// - choice: botones generados desde item.choices
 function renderAnswerInput(slot, c) {
   const displayId = slot === 'A' ? 'modeA-display' : 'modeC-display';
   const numpadId  = slot === 'A' ? 'numpad-A'     : 'numpad-C';
@@ -347,154 +343,7 @@ function renderQuizOptions() {
     cont.appendChild(btn);
   }
 }
+
 function generateNumericDistractors(correct) {
   const s = new Set([correct]);
-  while (s.size < 4) {
-    const delta = (Math.floor(Math.random() * 5) + 1) * (Math.random() < 0.5 ? 1 : -1);
-    s.add(Math.max(1, correct + delta));
-  }
-  return [...s].sort(() => Math.random() - 0.5);
-}
-
-function buildNumpad(containerId, onDigit, onClear) {
-  const cont = document.getElementById(containerId);
-  cont.innerHTML = '';
-  const layout = ['1','2','3','4','5','6','7','8','9','⌫','0','Borrar'];
-  for (const k of layout) {
-    const btn = document.createElement('button');
-    const isBack = k === '⌫';
-    const isClear = k === 'Borrar';
-    btn.className = isBack
-      ? 'bg-rose-950/30 hover:bg-rose-900/50 border border-rose-900/40 text-rose-300 font-bold py-3.5 rounded-2xl transition flex items-center justify-center'
-      : isClear
-      ? 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold py-3.5 rounded-2xl transition text-slate-400'
-      : 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-2xl font-bold py-3.5 rounded-2xl active:bg-indigo-600 transition text-slate-100';
-    btn.innerHTML = isBack ? '<i class="fa-solid fa-backspace"></i>' : k;
-    btn.onclick = () => {
-      if (state.locked) return;
-      if (isBack) onClear(true);
-      else if (isClear) onClear(false);
-      else onDigit(k);
-    };
-    cont.appendChild(btn);
-  }
-}
-
-function registerFirstTouch() {
-  if (!state.hasTouchedFirstKey) {
-    state.hasTouchedFirstKey = true;
-    state.firstTouchTime = Date.now() - state.cardStartTime;
-  }
-}
-
-function pressA(d) {
-  registerFirstTouch();
-  const expected = String(state.currentCard.item.answer);
-  if (state.currentTyped.length < expected.length) {
-    state.currentTyped += d;
-    document.getElementById('modeA-display').textContent = state.currentTyped;
-  }
-  if (state.currentTyped.length === expected.length) {
-    evaluate(parseInt(state.currentTyped, 10));
-  }
-}
-
-function clearA(backspace) {
-  state.currentTyped = backspace ? state.currentTyped.slice(0, -1) : '';
-  document.getElementById('modeA-display').textContent = state.currentTyped || '?';
-}
-
-function pressC(d) {
-  registerFirstTouch();
-  const expected = String(state.currentCard.item.answer);
-  if (state.currentTyped.length < expected.length) {
-    state.currentTyped += d;
-    document.getElementById('modeC-display').textContent = state.currentTyped;
-  }
-  if (state.currentTyped.length === expected.length) {
-    evaluate(parseInt(state.currentTyped, 10));
-  }
-}
-
-function clearC(backspace) {
-  state.currentTyped = backspace ? state.currentTyped.slice(0, -1) : '';
-  document.getElementById('modeC-display').textContent = state.currentTyped || '?';
-}
-
-function revealSolution() {
-  const c = state.currentCard;
-  const correct = c.item.answer;
-  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${correct}</strong>`;
-  document.getElementById('modeA-hint').className = 'text-sm text-indigo-300 font-bold mt-1 min-h-[1.25rem]';
-}
-
-async function evaluate(userAns) {
-  if (state.locked) return;
-  const c = state.currentCard;
-  const correct = c.item.answer;
-  const isCorrect = String(userAns) === String(correct);
-  const latency = state.firstTouchTime > 0 ? state.firstTouchTime : (Date.now() - state.cardStartTime);
-
-  recordAnswer(state.progress.stats, c.topicId, c.levelId, c.topic, c.item, isCorrect, latency);
-  saveProgress(state.user.uid, state.progress);
-
-  const container = state.mode === 'A' ? 'card-container'
-                   : state.mode === 'B' ? 'quiz-options'
-                   : 'exam-container';
-
-  if (isCorrect) {
-    state.session.correct++;
-    state.session.streak++;
-    updateHUD();
-    if (window.confetti) confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
-    state.locked = true;
-    setTimeout(() => nextCard(), 800);
-  } else {
-    state.session.errors++;
-    state.session.streak = 0;
-    updateHUD();
-    const el = document.getElementById(container);
-    el.classList.add('animate-shake');
-    setTimeout(() => el.classList.remove('animate-shake'), 400);
-
-    if (state.mode === 'A') {
-      document.getElementById('modeA-hint').textContent = '¡Casi! Inténtalo de nuevo';
-      document.getElementById('modeA-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
-      document.getElementById('btn-reveal').classList.remove('hidden');
-      state.currentTyped = '';
-      if (c.inputMode === 'numeric') {
-        document.getElementById('modeA-display').textContent = '?';
-      }
-    } else if (state.mode === 'C') {
-      document.getElementById('modeC-hint').textContent = '¡Error!';
-      document.getElementById('modeC-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
-      state.currentTyped = '';
-      if (c.inputMode === 'numeric') {
-        document.getElementById('modeC-display').textContent = '?';
-      }
-    } else if (state.mode === 'B') {
-      state.locked = true;
-      setTimeout(() => nextCard(), 700);
-    }
-  }
-}
-
-function updateHUD() {
-  document.getElementById('hud-correct').textContent = state.session.correct;
-  document.getElementById('hud-errors').textContent = state.session.errors;
-  document.getElementById('hud-streak').textContent = `🔥 ${state.session.streak}`;
-}
-
-let parentPanelInited = false;
-function openParentPanel(user) {
-  if (!parentPanelInited) {
-    initParentPanel({
-      getState: () => state,
-      topicsMap,
-      showScreen,
-      renderTopicsGrid
-    });
-    parentPanelInited = true;
-  }
-  window.dispatchEvent(new CustomEvent('mf:open-parent'));
-}
+  while (s.size <
