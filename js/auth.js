@@ -4,7 +4,10 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  getAuth
+  getAuth,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
@@ -61,11 +64,38 @@ export async function createChild(parentUid, username, password, displayName) {
     });
     await setDoc(doc(db, 'progress', childUid), {
       stats: {},
-      activeTables: [1, 2, 3, 4, 5],
+      plan: { order: [], topics: {} },
+      kpis: { daily: {}, byTopic: {}, byLevel: {} },
+      sessions: [],
       updatedAt: serverTimestamp()
     });
 
     return childUid;
+  } finally {
+    await deleteApp(tmpApp);
+  }
+}
+
+// Cambia la contraseña del usuario actual
+export async function changeOwnPassword(currentPassword, newPassword) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No hay usuario autenticado.');
+  const cred = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, cred);
+  await updatePassword(user, newPassword);
+  return true;
+}
+
+// Cambia la contraseña de un hijo (el padre debe conocer la actual)
+export async function changeChildPassword(childUsername, currentPassword, newPassword) {
+  const secondaryName = `pwd-${Date.now()}`;
+  const tmpApp = initializeApp(auth.app.options, secondaryName);
+  const tmpAuth = getAuth(tmpApp);
+  try {
+    const cred = await signInWithEmailAndPassword(tmpAuth, toEmail(childUsername), currentPassword);
+    await updatePassword(cred.user, newPassword);
+    await signOut(tmpAuth);
+    return true;
   } finally {
     await deleteApp(tmpApp);
   }
