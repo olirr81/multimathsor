@@ -141,7 +141,7 @@ async function renderStats(uid) {
       <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
         <i class="fa-solid fa-book text-indigo-400"></i> Temas y orden de práctica
       </h3>
-      <p class="text-xs text-slate-400 mb-4">Marca qué temas aparecen en la pantalla del niño. Usa ↑↓ para reordenar.</p>
+      <p class="text-xs text-slate-400 mb-4">Marca qué temas aparecen en la pantalla del niño. Usa ↑↓ para reordenar. El engranaje configura los niveles.</p>
       <div id="p-topics-list" class="space-y-2"></div>
     </div>
 
@@ -196,9 +196,9 @@ function renderTopicsList(uid, prog) {
       </button>
       <div class="flex-1">
         <div class="text-sm font-bold text-white">${t.nombre}</div>
-        <div class="text-[10px] text-slate-400">${cfg.enabled ? levelsLabel : 'Desactivado'}</div>
+        <div class="text-[10px] text-slate-400">${cfg.enabled ? levelsLabel : 'Desactivado — ' + levelsLabel}</div>
       </div>
-      <button data-config class="px-3 py-2 text-xs font-bold rounded-xl ${cfg.enabled ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate-900 text-slate-600 border border-slate-800'}" ${cfg.enabled ? '' : 'disabled'}>
+      <button data-config class="px-3 py-2 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
         <i class="fa-solid fa-sliders"></i>
       </button>
       <div class="flex flex-col">
@@ -213,7 +213,6 @@ function renderTopicsList(uid, prog) {
       renderTopicsList(uid, prog);
     };
     row.querySelector('[data-config]').onclick = () => {
-      if (!cfg.enabled) return;
       openLevelsModal(uid, topicId, t, cfg);
     };
     row.querySelector('[data-up]').onclick = () => {
