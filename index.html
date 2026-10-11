@@ -137,7 +137,6 @@
           <div><span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Errores</span><span id="hud-errors" class="text-base font-black text-rose-400">0</span></div>
         </div>
 
-        <!-- MODO A -->
         <div id="section-A" class="w-full max-w-md flex flex-col items-center">
           <div id="card-container" class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center relative overflow-hidden transition-all">
             <span id="card-topic-tag" class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/50 mb-3">Evocación Pura</span>
@@ -151,7 +150,6 @@
           <div id="numpad-A" class="w-full max-w-xs grid grid-cols-3 gap-2 mt-5"></div>
         </div>
 
-        <!-- MODO B -->
         <div id="section-B" class="w-full max-w-md flex flex-col items-center hidden">
           <div class="w-full bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl mb-6">
             <span id="card-topic-tag-B" class="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50 mb-3 inline-block">Modo Arcade</span>
@@ -161,7 +159,6 @@
           <div id="quiz-options" class="grid grid-cols-2 gap-3 w-full"></div>
         </div>
 
-        <!-- MODO C -->
         <div id="section-C" class="w-full max-w-md flex flex-col items-center hidden">
           <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-4 flex items-center justify-between">
             <label class="text-xs font-bold text-slate-300">Tabla:</label>
@@ -182,7 +179,6 @@
 
       </section>
 
-      <!-- PANEL PADRES -->
       <section id="section-PARENT" class="w-full max-w-3xl flex flex-col gap-5 hidden"></section>
 
     </main>
@@ -197,6 +193,9 @@
     <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 shadow-2xl">
       <h3 class="text-lg font-black text-white mb-4 text-center">Configuración</h3>
       <div class="space-y-2">
+        <button id="btn-change-own-pass" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold rounded-xl text-sm transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-key"></i> Cambiar mi contraseña
+        </button>
         <button id="btn-switch-user" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold rounded-xl text-sm transition flex items-center justify-center gap-2">
           <i class="fa-solid fa-right-left"></i> Cambiar de cuenta
         </button>
@@ -205,6 +204,48 @@
         </button>
         <button id="btn-config-cancel" class="w-full py-3 text-slate-400 hover:text-white text-sm transition">Cancelar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL CAMBIAR MI CONTRASEÑA ================= -->
+  <div id="change-own-pass-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
+      <h3 class="text-lg font-black text-white mb-1 text-center">Cambiar mi contraseña</h3>
+      <p class="text-xs text-slate-400 text-center mb-4">Necesitamos tu contraseña actual por seguridad.</p>
+      <form id="change-own-pass-form" class="space-y-3">
+        <input id="own-pass-current" type="password" placeholder="Contraseña actual" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <input id="own-pass-new" type="password" placeholder="Nueva contraseña (mín. 6)" minlength="6" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <input id="own-pass-repeat" type="password" placeholder="Repetir nueva" minlength="6" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <p id="own-pass-error" class="text-xs text-rose-400 font-semibold min-h-[1rem]"></p>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="own-pass-cancel" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-sm transition">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition">Cambiar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL CAMBIAR CONTRASEÑA DE HIJO ================= -->
+  <div id="change-child-pass-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
+      <h3 id="child-pass-title" class="text-lg font-black text-white mb-1 text-center">Cambiar contraseña de hijo</h3>
+      <p class="text-xs text-slate-400 text-center mb-4">Introduce la contraseña actual del hijo y la nueva.</p>
+      <form id="change-child-pass-form" class="space-y-3">
+        <input id="child-pass-current" type="password" placeholder="Contraseña actual del hijo" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <input id="child-pass-new" type="password" placeholder="Nueva contraseña (mín. 6)" minlength="6" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <input id="child-pass-repeat" type="password" placeholder="Repetir nueva" minlength="6" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        <p id="child-pass-error" class="text-xs text-rose-400 font-semibold min-h-[1rem]"></p>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="child-pass-cancel" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-sm transition">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition">Cambiar</button>
+        </div>
+      </form>
     </div>
   </div>
 
