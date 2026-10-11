@@ -146,16 +146,6 @@ async function renderStats(uid) {
     </div>
 
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5">
-      <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
-        <i class="fa-solid fa-fire text-amber-400"></i> Mapa de calor (Tablas)
-      </h3>
-      <p class="text-xs text-slate-400 mb-4">Toca cualquier celda para ver detalle.</p>
-      <div class="overflow-x-auto">
-        <div id="p-heatmap" class="grid grid-cols-12 gap-1 min-w-[480px]"></div>
-      </div>
-    </div>
-
-    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5">
       <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Top 5 más atascadas
       </h3>
@@ -164,7 +154,6 @@ async function renderStats(uid) {
   `;
 
   renderTopicsList(uid, prog);
-  renderHeatmap(stats);
   renderBottlenecks(stats);
 }
 
@@ -184,9 +173,9 @@ function renderTopicsList(uid, prog) {
     const t = ctx.topicsMap[topicId];
     if (!t) return;
     const cfg = plan.topics[topicId];
-    const levels = t.levels();
-    const activeCount = cfg.activeLevels ? cfg.activeLevels.length : levels.length;
-    const levelsLabel = `${activeCount}/${levels.length} niveles`;
+    const allLevels = t.levels();
+    const active = cfg.activeLevels || allLevels.map(l => l.id);
+    const activeCount = active.length;
 
     const row = document.createElement('div');
     row.className = 'flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-2xl px-3 py-2.5';
@@ -196,7 +185,7 @@ function renderTopicsList(uid, prog) {
       </button>
       <div class="flex-1">
         <div class="text-sm font-bold text-white">${t.nombre}</div>
-        <div class="text-[10px] text-slate-400">${cfg.enabled ? levelsLabel : 'Desactivado — ' + levelsLabel}</div>
+        <div class="text-[10px] text-slate-400">${cfg.enabled ? activeCount + '/' + allLevels.length + ' niveles' : 'Desactivado — ' + activeCount + '/' + allLevels.length}</div>
       </div>
       <button data-config class="px-3 py-2 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
         <i class="fa-solid fa-sliders"></i>
@@ -212,9 +201,7 @@ function renderTopicsList(uid, prog) {
       saveProgress(uid, prog);
       renderTopicsList(uid, prog);
     };
-    row.querySelector('[data-config]').onclick = () => {
-      openLevelsModal(uid, topicId, t, cfg);
-    };
+    row.querySelector('[data-config]').onclick = () => openLevelsModal(uid, topicId, t, cfg);
     row.querySelector('[data-up]').onclick = () => {
       if (index === 0) return;
       const arr = plan.order;
@@ -244,19 +231,45 @@ function openLevelsModal(uid, topicId, topic, cfg) {
   const levels = topic.levels();
   const active = cfg.activeLevels || levels.map(l => l.id);
 
-  grid.innerHTML = '';
+  // Agrupamos por .group (si existe)
+  const groups = {};
   for (const lvl of levels) {
-    const on = active.includes(lvl.id);
-    const btn = document.createElement('button');
-    btn.dataset.level = String(lvl.id);
-    btn.dataset.on = on ? '1' : '0';
-    btn.textContent = lvl.label;
-    btn.onclick = () => {
-      btn.dataset.on = btn.dataset.on === '1' ? '0' : '1';
-      repaintLevelsGrid();
-    };
-    grid.appendChild(btn);
+    const g = lvl.group || 'Otros';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(lvl);
   }
+
+  grid.className = 'space-y-4 mb-4';
+  grid.innerHTML = '';
+
+  for (const [groupName, groupLevels] of Object.entries(groups)) {
+    const groupEl = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-2';
+    header.textContent = groupName;
+    groupEl.appendChild(header);
+
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-2 sm:grid-cols-3 gap-2';
+
+    for (const lvl of groupLevels) {
+      const on = active.includes(lvl.id);
+      const btn = document.createElement('button');
+      btn.dataset.level = String(lvl.id);
+      btn.dataset.on = on ? '1' : '0';
+      btn.textContent = lvl.label;
+      btn.onclick = () => {
+        btn.dataset.on = btn.dataset.on === '1' ? '0' : '1';
+        repaintLevelsGrid();
+      };
+      row.appendChild(btn);
+    }
+
+    groupEl.appendChild(row);
+    grid.appendChild(groupEl);
+  }
+
   repaintLevelsGrid();
 
   document.getElementById('levels-select-all').onclick = () => {
@@ -271,8 +284,9 @@ function openLevelsModal(uid, topicId, topic, cfg) {
     const selected = [...grid.querySelectorAll('button[data-level]')]
       .filter(b => b.dataset.on === '1')
       .map(b => {
-        const n = parseInt(b.dataset.level, 10);
-        return isNaN(n) ? b.dataset.level : n;
+        const raw = b.dataset.level;
+        const n = parseInt(raw, 10);
+        return isNaN(n) ? raw : n;
       });
     if (selected.length === 0) {
       alert('Marca al menos un nivel.');
@@ -301,41 +315,18 @@ function repaintLevelsGrid() {
   });
 }
 
-function renderHeatmap(stats) {
-  const grid = document.getElementById('p-heatmap');
-  grid.innerHTML = '';
-  for (let i = 1; i <= 12; i++) {
-    for (let j = 1; j <= 12; j++) {
-      const key = `tablas:${i}-${j}`;
-      const s = stats[key] || { attempts: 0, correct: 0, errors: 0, totalFirstTouchMs: 0 };
-      let cls = 'bg-slate-950 border-slate-800 text-slate-600';
-      if (s.attempts > 0) {
-        const avgL = (s.totalFirstTouchMs / s.attempts) / 1000;
-        const errRate = s.errors / s.attempts;
-        if (errRate > 0.3) cls = 'bg-rose-950/60 border-rose-800/60 text-rose-300';
-        else if (avgL > 2.5) cls = 'bg-amber-950/60 border-amber-800/60 text-amber-300';
-        else cls = 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300';
-      }
-      const cell = document.createElement('div');
-      cell.className = `aspect-square rounded-md border flex items-center justify-center text-[9px] font-bold cursor-pointer transition hover:scale-110 ${cls}`;
-      cell.textContent = `${i}×${j}`;
-      cell.onclick = () => openOpModal(i, j, s);
-      grid.appendChild(cell);
-    }
-  }
-}
-
 function renderBottlenecks(stats) {
   const cont = document.getElementById('p-bottlenecks');
   cont.innerHTML = '';
   const items = [];
   for (const [k, s] of Object.entries(stats)) {
     if (!s.attempts) continue;
-    const [topicId, rest] = k.split(':');
-    if (!rest) continue;
-    const [a, b] = rest.split('-');
+    // clave nueva: topic:level:op
+    const parts = k.split(':');
+    if (parts.length < 3) continue;
+    const [, levelId, opKey] = parts;
     const avgL = (s.totalFirstTouchMs / s.attempts) / 1000;
-    items.push({ op: `${a} × ${b}`, topic: topicId, errors: s.errors, latency: avgL.toFixed(1), score: s.errors * 25 + avgL });
+    items.push({ op: `[${levelId}] ${opKey}`, errors: s.errors, latency: avgL.toFixed(1), score: s.errors * 25 + avgL });
   }
   items.sort((a, b) => b.score - a.score);
   if (!items.length) {
@@ -353,25 +344,6 @@ function renderBottlenecks(stats) {
       </div>`;
     cont.appendChild(row);
   }
-}
-
-function openOpModal(a, b, s) {
-  if (!s) s = { attempts: 0, correct: 0, errors: 0, totalFirstTouchMs: 0 };
-  const avg = s.attempts > 0 ? Math.round(s.totalFirstTouchMs / s.attempts) : 0;
-  document.getElementById('modal-op-title').textContent = `${a} × ${b}`;
-  document.getElementById('modal-op-attempts').textContent = s.attempts;
-  document.getElementById('modal-op-correct').textContent = s.correct;
-  document.getElementById('modal-op-errors').textContent = s.errors;
-  document.getElementById('modal-op-latency').textContent = `${avg} ms`;
-  let status = 'Por aprender';
-  if (s.attempts > 0) {
-    const errRate = s.errors / s.attempts;
-    status = errRate > 0.3 ? 'Dificultad alta'
-           : avg > 2500 ? 'Proceso lento'
-           : 'Dominada';
-  }
-  document.getElementById('modal-op-status').textContent = status;
-  document.getElementById('detail-modal').classList.remove('hidden');
 }
 
 async function exportJSON(uid) {
@@ -395,8 +367,7 @@ async function importJSON(uid) {
       const data = JSON.parse(await file.text());
       const prog = {
         stats: data.progress?.stats || {},
-        plan: data.progress?.plan || null,
-        activeTables: data.progress?.activeTables || [1, 2, 3, 4, 5]
+        plan: data.progress?.plan || null
       };
       invalidateCache(uid);
       saveProgress(uid, prog);
