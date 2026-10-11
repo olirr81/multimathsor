@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function isAuthed() { return request.auth != null; }
+
+    function getUser(uid) {
+      return get(/databases/$(db)/documents/users/$(uid)).data;
+    }
+
+    function isParent() {
+      return isAuthed() && getUser(request.auth.uid).role == 'parent';
+    }
+
+    function isMyChild(childUid) {
+      return isAuthed() && getUser(childUid).parentUid == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow read: if isAuthed() && (request.auth.uid == uid || isMyChild(uid) || isParent());
+      allow create: if isAuthed() && request.auth.uid == uid;
+      allow update: if isAuthed() && (
+        (request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.parentUid == resource.data.parentUid)
+        || isParent()
+      );
+      allow delete: if isParent();
+    }
+
+    match /progress/{uid} {
+      allow read, write: if isAuthed() && (request.auth.uid == uid || isMyChild(uid));
+    }
+  }
+}
