@@ -4,6 +4,10 @@ import { loadProgress, saveProgress, invalidateCache, flushProgress } from '../s
 let ctx = null;
 let currentUserId = null;
 let currentViewUid = null;
+let currentTab = 'resumen';
+
+// SheetJS viene desde el <script> en index.html
+const XLSX = window.XLSX;
 
 export function initParentPanel(context) {
   ctx = context;
@@ -16,7 +20,10 @@ export function initParentPanel(context) {
   });
   document.getElementById('add-child-form').addEventListener('submit', handleAddChild);
 
-  window.addEventListener('mf:open-parent', () => openPanel());
+  window.addEventListener('mf:open-parent', () => {
+    currentTab = 'resumen';
+    openPanel();
+  });
 }
 
 async function openPanel() {
@@ -51,12 +58,6 @@ async function openPanel() {
         <button id="p-add-child" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition">
           <i class="fa-solid fa-user-plus mr-1"></i> Añadir hijo
         </button>
-        <button id="p-export" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition border border-slate-700">
-          <i class="fa-solid fa-download"></i>
-        </button>
-        <button id="p-import" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition border border-slate-700">
-          <i class="fa-solid fa-upload"></i>
-        </button>
       </div>
     </div>
 
@@ -67,48 +68,55 @@ async function openPanel() {
       </select>
     </div>
 
-    <div id="p-stats-area" class="space-y-5"></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-1.5 flex gap-1">
+      <button data-tab="resumen" class="ptab flex-1 py-2.5 rounded-xl text-xs font-bold transition">Resumen</button>
+      <button data-tab="informe" class="ptab flex-1 py-2.5 rounded-xl text-xs font-bold transition">Informe</button>
+      <button data-tab="config" class="ptab flex-1 py-2.5 rounded-xl text-xs font-bold transition">Configuración</button>
+    </div>
+
+    <div id="p-tab-content"></div>
   `;
 
   document.getElementById('p-add-child').addEventListener('click', () => {
     document.getElementById('add-child-modal').classList.remove('hidden');
     document.getElementById('add-child-error').textContent = '';
   });
-  document.getElementById('p-export').addEventListener('click', () => exportJSON(currentViewUid));
-  document.getElementById('p-import').addEventListener('click', () => importJSON(currentViewUid));
 
-  const sel = document.getElementById('p-child-select');
-  sel.addEventListener('change', () => {
-    currentViewUid = sel.value;
-    renderStats(currentViewUid);
+  document.getElementById('p-child-select').addEventListener('change', (e) => {
+    currentViewUid = e.target.value;
+    renderTab();
   });
 
-  renderStats(currentViewUid);
+  document.querySelectorAll('.ptab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTab = btn.dataset.tab;
+      renderTab();
+    });
+  });
+
+  renderTab();
 }
 
-async function handleAddChild(e) {
-  e.preventDefault();
-  const errEl = document.getElementById('add-child-error');
-  errEl.textContent = '';
-  const name = document.getElementById('child-name').value.trim();
-  const user = document.getElementById('child-user').value.trim();
-  const pass = document.getElementById('child-pass').value;
+function renderTab() {
+  // Actualiza el estilo de las pestañas
+  document.querySelectorAll('.ptab').forEach(b => {
+    const on = b.dataset.tab === currentTab;
+    b.className = `ptab flex-1 py-2.5 rounded-xl text-xs font-bold transition ${
+      on ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+         : 'text-slate-400 hover:text-white hover:bg-slate-800'
+    }`;
+  });
 
-  try {
-    const childUid = await createChild(currentUserId, user, pass, name);
-    await registerChildUnderParent(currentUserId, childUid);
-    document.getElementById('add-child-modal').classList.add('hidden');
-    document.getElementById('add-child-form').reset();
-    await openPanel();
-  } catch (err) {
-    errEl.textContent = err.code === 'auth/email-already-in-use'
-      ? 'Ese usuario ya existe.'
-      : (err.message || 'Error al crear la cuenta.');
-  }
+  if (currentTab === 'resumen')      renderResumenTab(currentViewUid);
+  else if (currentTab === 'informe') renderInformeTab(currentViewUid);
+  else if (currentTab === 'config')  renderConfigTab(currentViewUid);
 }
 
-async function renderStats(uid) {
-  const area = document.getElementById('p-stats-area');
+// ============================================================
+// PESTAÑA: RESUMEN
+// ============================================================
+async function renderResumenTab(uid) {
+  const cont = document.getElementById('p-tab-content');
   const prog = await loadProgress(uid);
   const stats = prog.stats || {};
 
@@ -121,8 +129,8 @@ async function renderStats(uid) {
   const accuracy = totalOps > 0 ? Math.round((totalCorrect / totalOps) * 100) : 0;
   const avgLat = totalOps > 0 ? ((totalLatSum / totalOps) / 1000).toFixed(1) : '0.0';
 
-  area.innerHTML = `
-    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  cont.innerHTML = `
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
       <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
         <span class="text-[10px] font-bold uppercase text-slate-400">Operaciones</span>
         <div class="text-2xl font-black text-white mt-1">${totalOps}</div>
@@ -137,24 +145,222 @@ async function renderStats(uid) {
       </div>
     </div>
 
-    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5">
-      <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
-        <i class="fa-solid fa-book text-indigo-400"></i> Temas y orden de práctica
-      </h3>
-      <p class="text-xs text-slate-400 mb-4">Marca qué temas aparecen en la pantalla del niño. Usa ↑↓ para reordenar. El engranaje configura los niveles.</p>
-      <div id="p-topics-list" class="space-y-2"></div>
-    </div>
-
-    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-5">
       <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Top 5 más atascadas
       </h3>
       <div id="p-bottlenecks" class="space-y-2"></div>
     </div>
   `;
+  renderBottlenecks(stats);
+}
+
+// ============================================================
+// PESTAÑA: INFORME
+// ============================================================
+async function renderInformeTab(uid) {
+  const cont = document.getElementById('p-tab-content');
+  const prog = await loadProgress(uid);
+
+  const kpis = prog.kpis || { daily: {}, byTopic: {}, byLevel: {} };
+  const sessions = prog.sessions || [];
+
+  // KPIs por tema (toda la historia)
+  const byTopic = kpis.byTopic || {};
+  const topicRows = Object.entries(byTopic).map(([topicId, t]) => {
+    const accuracy = t.ops > 0 ? Math.round((t.correct / t.ops) * 100) : 0;
+    const avgMs = t.ops > 0 ? Math.round(t.ms / t.ops) : 0;
+    return { topicId, ...t, accuracy, avgMs };
+  }).sort((a, b) => a.topicId.localeCompare(b.topicId));
+
+  // KPIs por nivel (toda la historia)
+  const byLevel = kpis.byLevel || {};
+  const levelRows = Object.entries(byLevel).map(([key, l]) => {
+    const [topicId, levelId] = key.split(':');
+    const accuracy = l.ops > 0 ? Math.round((l.correct / l.ops) * 100) : 0;
+    const avgMs = l.ops > 0 ? Math.round(l.ms / l.ops) : 0;
+    return { topicId, levelId, ...l, accuracy, avgMs };
+  }).sort((a, b) => a.accuracy - b.accuracy);
+
+  // Total histórico desde KPIs
+  const totalOpsAll = topicRows.reduce((s, r) => s + r.ops, 0);
+  const totalCorrectAll = topicRows.reduce((s, r) => s + r.correct, 0);
+  const totalErrorsAll = topicRows.reduce((s, r) => s + r.errors, 0);
+  const totalMsAll = topicRows.reduce((s, r) => s + r.ms, 0);
+  const accuracyAll = totalOpsAll > 0 ? Math.round((totalCorrectAll / totalOpsAll) * 100) : 0;
+
+  // Fallos recientes (de las 50 sesiones)
+  const recentErrors = [];
+  for (const s of sessions) {
+    for (const a of s.attempts || []) {
+      if (!a.ok) {
+        recentErrors.push({ ...a, sessionId: s.id, topicId: s.topicId, topicName: s.topicName });
+      }
+    }
+  }
+  recentErrors.sort((a, b) => b.at - a.at);
+  const topErrors = recentErrors.slice(0, 30);
+
+  cont.innerHTML = `
+    <div class="bg-gradient-to-tr from-emerald-600 to-teal-600 rounded-3xl p-5 shadow-2xl border border-white/10 mt-1">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 class="text-base font-black text-white flex items-center gap-2">
+            <i class="fa-solid fa-file-excel"></i> Exportar a Excel
+          </h3>
+          <p class="text-xs text-white/80 mt-0.5">Informe completo con 7 hojas: KPIs, sesiones, fallos y detalle.</p>
+        </div>
+        <button id="btn-export-xlsx" class="bg-white text-emerald-700 font-black px-4 py-2.5 rounded-xl text-sm shadow-lg transition hover:scale-[1.02] active:scale-95 flex items-center gap-2">
+          <i class="fa-solid fa-download"></i> Descargar .xlsx
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+        <span class="text-[10px] font-bold uppercase text-slate-400">Ops históricas</span>
+        <div class="text-2xl font-black text-white mt-1">${totalOpsAll}</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+        <span class="text-[10px] font-bold uppercase text-slate-400">Precisión</span>
+        <div class="text-2xl font-black text-emerald-400 mt-1">${accuracyAll}%</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+        <span class="text-[10px] font-bold uppercase text-slate-400">Fallos</span>
+        <div class="text-2xl font-black text-rose-400 mt-1">${totalErrorsAll}</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+        <span class="text-[10px] font-bold uppercase text-slate-400">Tiempo total</span>
+        <div class="text-2xl font-black text-amber-400 mt-1">${Math.round(totalMsAll / 60000)}min</div>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-5">
+      <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-layer-group text-indigo-400"></i> Rendimiento por tema (toda la historia)
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-slate-300">
+          <thead class="text-[10px] uppercase text-slate-500 border-b border-slate-800">
+            <tr><th class="text-left py-2">Tema</th><th class="text-right">Ops</th><th class="text-right">Aciertos</th><th class="text-right">Fallos</th><th class="text-right">Precisión</th><th class="text-right">ms/op</th></tr>
+          </thead>
+          <tbody>
+            ${topicRows.length === 0
+              ? `<tr><td colspan="6" class="py-4 italic text-slate-500 text-center">Sin datos</td></tr>`
+              : topicRows.map(r => `
+                <tr class="border-b border-slate-800/50">
+                  <td class="py-2 font-bold text-white">${r.topicId}</td>
+                  <td class="text-right">${r.ops}</td>
+                  <td class="text-right text-emerald-400">${r.correct}</td>
+                  <td class="text-right text-rose-400">${r.errors}</td>
+                  <td class="text-right font-bold ${r.accuracy < 50 ? 'text-rose-400' : r.accuracy > 80 ? 'text-emerald-400' : 'text-amber-400'}">${r.accuracy}%</td>
+                  <td class="text-right text-slate-400">${r.avgMs}</td>
+                </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-5">
+      <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-ranking-star text-amber-400"></i> Niveles ordenados por precisión (peores primero)
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-slate-300">
+          <thead class="text-[10px] uppercase text-slate-500 border-b border-slate-800">
+            <tr><th class="text-left py-2">Tema · Nivel</th><th class="text-right">Ops</th><th class="text-right">Precisión</th><th class="text-right">ms/op</th></tr>
+          </thead>
+          <tbody>
+            ${levelRows.length === 0
+              ? `<tr><td colspan="4" class="py-4 italic text-slate-500 text-center">Sin datos</td></tr>`
+              : levelRows.map(r => `
+                <tr class="border-b border-slate-800/50">
+                  <td class="py-2"><span class="font-bold text-white">${r.topicId}</span> <span class="text-slate-500">·</span> ${r.levelId}</td>
+                  <td class="text-right">${r.ops}</td>
+                  <td class="text-right font-bold ${r.accuracy < 50 ? 'text-rose-400' : r.accuracy > 80 ? 'text-emerald-400' : 'text-amber-400'}">${r.accuracy}%</td>
+                  <td class="text-right text-slate-400">${r.avgMs}</td>
+                </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-5">
+      <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-clock-rotate-left text-sky-400"></i> Últimas sesiones
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-slate-300">
+          <thead class="text-[10px] uppercase text-slate-500 border-b border-slate-800">
+            <tr><th class="text-left py-2">Fecha</th><th class="text-left">Tema</th><th class="text-right">Duración</th><th class="text-right">Ops</th><th class="text-right">Precisión</th><th class="text-right">ms/op</th></tr>
+          </thead>
+          <tbody>
+            ${sessions.length === 0
+              ? `<tr><td colspan="6" class="py-4 italic text-slate-500 text-center">Sin sesiones registradas todavía</td></tr>`
+              : sessions.slice().reverse().slice(0, 15).map(s => `
+                <tr class="border-b border-slate-800/50">
+                  <td class="py-2 text-slate-400">${formatDate(s.startedAt)}</td>
+                  <td class="font-bold text-white">${s.topicName}</td>
+                  <td class="text-right">${Math.round(s.activeSec / 60)}min</td>
+                  <td class="text-right">${s.operations}</td>
+                  <td class="text-right font-bold ${s.accuracy < 50 ? 'text-rose-400' : s.accuracy > 80 ? 'text-emerald-400' : 'text-amber-400'}">${s.accuracy}%</td>
+                  <td class="text-right text-slate-400">${s.avgLatencyMs}</td>
+                </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${sessions.length > 15 ? `<p class="text-[10px] text-slate-500 mt-2 italic">Mostrando las últimas 15 de ${sessions.length} sesiones guardadas. El Excel contiene todas.</p>` : ''}
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-5">
+      <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-list-ul text-rose-400"></i> Últimos fallos (${recentErrors.length} en las últimas 50 sesiones)
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-slate-300">
+          <thead class="text-[10px] uppercase text-slate-500 border-b border-slate-800">
+            <tr><th class="text-left py-2">Fecha</th><th class="text-left">Tema · Nivel</th><th class="text-left">Pregunta</th><th class="text-right">Dado</th><th class="text-right">Correcto</th><th class="text-right">ms</th></tr>
+          </thead>
+          <tbody>
+            ${topErrors.length === 0
+              ? `<tr><td colspan="6" class="py-4 italic text-slate-500 text-center">Sin fallos registrados</td></tr>`
+              : topErrors.map(e => `
+                <tr class="border-b border-slate-800/50">
+                  <td class="py-2 text-slate-400 whitespace-nowrap">${formatDate(e.at)}</td>
+                  <td><span class="font-bold text-white">${e.topicName}</span><br><span class="text-slate-500 text-[10px]">${e.levelId}</span></td>
+                  <td class="text-slate-300 max-w-xs">${escapeHtml(e.prompt)}</td>
+                  <td class="text-right text-rose-400 font-bold">${escapeHtml(String(e.given))}</td>
+                  <td class="text-right text-emerald-400 font-bold">${escapeHtml(String(e.answer))}</td>
+                  <td class="text-right text-slate-400">${e.ms}</td>
+                </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${recentErrors.length > 30 ? `<p class="text-[10px] text-slate-500 mt-2 italic">Mostrando 30 de ${recentErrors.length} fallos. El Excel contiene todos.</p>` : ''}
+    </div>
+  `;
+
+  document.getElementById('btn-export-xlsx').addEventListener('click', () => exportXLSX(uid, prog));
+}
+
+// ============================================================
+// PESTAÑA: CONFIGURACIÓN
+// ============================================================
+async function renderConfigTab(uid) {
+  const cont = document.getElementById('p-tab-content');
+  const prog = await loadProgress(uid);
+
+  cont.innerHTML = `
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-1">
+      <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+        <i class="fa-solid fa-book text-indigo-400"></i> Temas y orden de práctica
+      </h3>
+      <p class="text-xs text-slate-400 mb-4">Marca qué temas aparecen en la pantalla del niño. Usa ↑↓ para reordenar. El engranaje configura los niveles.</p>
+      <div id="p-topics-list" class="space-y-2"></div>
+    </div>
+  `;
 
   renderTopicsList(uid, prog);
-  renderBottlenecks(stats);
 }
 
 function renderTopicsList(uid, prog) {
@@ -169,9 +375,7 @@ function renderTopicsList(uid, prog) {
     if (!plan.topics[id]) { plan.topics[id] = { enabled: false, activeLevels: null }; planChanged = true; }
   }
   prog.plan = plan;
-  if (planChanged) {
-    saveProgress(uid, prog);
-  }
+  if (planChanged) saveProgress(uid, prog);
 
   plan.order.forEach((topicId, index) => {
     const t = ctx.topicsMap[topicId];
@@ -228,6 +432,9 @@ function renderTopicsList(uid, prog) {
   });
 }
 
+// ============================================================
+// MODAL NIVELES
+// ============================================================
 function openLevelsModal(uid, topicId, topic, cfg) {
   const modal = document.getElementById('levels-modal');
   const title = document.getElementById('levels-modal-title');
@@ -305,7 +512,7 @@ function openLevelsModal(uid, topicId, topic, cfg) {
     saveProgress(uid, prog);
     await flushProgress(uid);
     modal.classList.add('hidden');
-    renderStats(uid);
+    renderConfigTab(uid);
   };
 
   modal.classList.remove('hidden');
@@ -322,6 +529,9 @@ function repaintLevelsGrid() {
   });
 }
 
+// ============================================================
+// TOP 5 ATASCADAS (Resumen)
+// ============================================================
 function renderBottlenecks(stats) {
   const cont = document.getElementById('p-bottlenecks');
   cont.innerHTML = '';
@@ -352,37 +562,47 @@ function renderBottlenecks(stats) {
   }
 }
 
-async function exportJSON(uid) {
-  const prog = await loadProgress(uid);
-  const blob = new Blob([JSON.stringify({ uid, progress: prog }, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `multiflash_${uid.slice(0, 6)}_${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+// ============================================================
+// AÑADIR HIJO
+// ============================================================
+async function handleAddChild(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('add-child-error');
+  errEl.textContent = '';
+  const name = document.getElementById('child-name').value.trim();
+  const user = document.getElementById('child-user').value.trim();
+  const pass = document.getElementById('child-pass').value;
+
+  try {
+    const childUid = await createChild(currentUserId, user, pass, name);
+    await registerChildUnderParent(currentUserId, childUid);
+    document.getElementById('add-child-modal').classList.add('hidden');
+    document.getElementById('add-child-form').reset();
+    await openPanel();
+  } catch (err) {
+    errEl.textContent = err.code === 'auth/email-already-in-use'
+      ? 'Ese usuario ya existe.'
+      : (err.message || 'Error al crear la cuenta.');
+  }
 }
 
-async function importJSON(uid) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'application/json';
-  input.onchange = async () => {
-    const file = input.files[0];
-    if (!file) return;
-    try {
-      const data = JSON.parse(await file.text());
-      const prog = {
-        stats: data.progress?.stats || {},
-        plan: data.progress?.plan || null
-      };
-      invalidateCache(uid);
-      saveProgress(uid, prog);
-      await flushProgress(uid);
-      setTimeout(() => renderStats(uid), 2000);
-      alert('Progreso importado. Se subirá a la nube en unos segundos.');
-    } catch (e) {
-      alert('JSON inválido.');
-    }
-  };
-  input.click();
-}
+// ============================================================
+// EXPORTAR A EXCEL
+// ============================================================
+function exportXLSX(uid, prog) {
+  if (!XLSX) {
+    alert('La librería Excel no está cargada. Verifica js/lib/xlsx.full.min.js en el repo.');
+    return;
+  }
+
+  const kpis = prog.kpis || { daily: {}, byTopic: {}, byLevel: {} };
+  const sessions = prog.sessions || [];
+  const stats = prog.stats || {};
+
+  const wb = XLSX.utils.book_new();
+
+  // -------- HOJA 1: RESUMEN --------
+  const totalOpsAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.ops, 0);
+  const totalCorrectAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.correct, 0);
+  const totalErrorsAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.errors, 0);
+  const totalMsAll = Object.values(kpis.byTopic || {}).
