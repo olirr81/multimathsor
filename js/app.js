@@ -10,12 +10,12 @@ const state = {
   profile: null,
   progress: null,
   session: { correct: 0, errors: 0, streak: 0 },
-  mode: 'A',                // 'A' | 'B' | 'C'
-  screen: 'HOME',           // 'HOME' | 'GAME' | 'PARENT'
-  activeTopicId: null,      // tema que se está practicando ahora
-  forcedTopicId: null,      // si viene de "Repasar", el tema concreto
-  currentCard: null,        // { topicId, op }
-  examTable: 7,
+  mode: 'A',
+  screen: 'HOME',
+  activeTopicId: null,
+  forcedTopicId: null,
+  currentCard: null,   // { topicId, levelId, inputMode, item, topic }
+  examLevelId: null,
   currentTyped: '',
   cardStartTime: 0,
   firstTouchTime: 0,
@@ -77,23 +77,14 @@ async function startApp() {
   renderTopicsGrid();
 }
 
-// Asegura que progress tiene la estructura nueva. Migra si es antiguo.
 function ensurePlan(progress) {
   if (!progress.plan) {
-    progress.plan = {
-      order: ['tablas'],
-      topics: {
-        tablas: { enabled: true, activeLevels: [1,2,3,4,5,6,7,8,9,10,11,12] }
-      }
-    };
+    progress.plan = { order: ['tablas'], topics: { tablas: { enabled: true, activeLevels: null } } };
   }
-  // Migración: si tenía activeTables antiguo, conviértelo en activeLevels
-  if (progress.activeTables && !progress.plan.topics.tablas.activeLevels) {
-    progress.plan.topics.tablas.activeLevels = [...progress.activeTables];
-  }
+  if (!progress.plan.order) progress.plan.order = [];
+  if (!progress.plan.topics) progress.plan.topics = {};
 }
 
-// ============ NAVEGACIÓN DE PANTALLAS ============
 function showScreen(screen) {
   state.screen = screen;
   document.getElementById('section-HOME').classList.toggle('hidden', screen !== 'HOME');
@@ -102,13 +93,12 @@ function showScreen(screen) {
   document.getElementById('btn-home').classList.toggle('hidden', screen === 'HOME');
   document.getElementById('brand-icon').classList.toggle('hidden', screen !== 'HOME');
 
-  // HUD y tabs de modo solo en GAME
-  const nav = document.querySelectorAll('.mode-tab');
-  nav.forEach(n => n.style.display = screen === 'GAME' ? '' : 'none');
+  document.querySelectorAll('.mode-tab').forEach(n => {
+    n.style.display = screen === 'GAME' ? '' : 'none';
+  });
   document.getElementById('game-hud').classList.toggle('hidden', screen !== 'GAME');
 }
 
-// ============ CUADRÍCULA DE TEMAS ============
 function renderTopicsGrid() {
   const grid = document.getElementById('topics-grid');
   grid.innerHTML = '';
@@ -119,11 +109,9 @@ function renderTopicsGrid() {
   for (const topicId of order) {
     const t = getTopic(topicId);
     if (!t) continue;
-    const card = makeTopicCard(t);
-    grid.appendChild(card);
+    grid.appendChild(makeTopicCard(t));
   }
 
-  // Tarjeta "Repasar"
   const review = document.createElement('button');
   review.className = 'bg-slate-900 border-2 border-slate-800 hover:border-slate-700 rounded-3xl p-5 flex flex-col items-center justify-center gap-2 transition active:scale-95 aspect-square';
   review.innerHTML = `
@@ -155,7 +143,6 @@ function makeTopicCard(t) {
   return card;
 }
 
-// ============ MODAL REPASAR ============
 function openReviewModal() {
   const list = document.getElementById('review-topics-list');
   list.innerHTML = '';
@@ -178,7 +165,6 @@ function openReviewModal() {
   document.getElementById('review-modal').classList.remove('hidden');
 }
 
-// ============ INICIAR JUEGO ============
 function startGame(topicId, forcedTopicId) {
   state.activeTopicId = topicId;
   state.forcedTopicId = forcedTopicId;
@@ -188,7 +174,6 @@ function startGame(topicId, forcedTopicId) {
   switchMode(state.mode || 'A');
 }
 
-// ============ NAVEGACIÓN DE MODOS ============
 function initUI() {
   document.querySelectorAll('.mode-tab').forEach(btn => {
     btn.addEventListener('click', () => switchMode(btn.dataset.mode));
@@ -198,42 +183,26 @@ function initUI() {
     showScreen('HOME');
     renderTopicsGrid();
   });
-
   document.getElementById('btn-config').addEventListener('click', () => {
     document.getElementById('config-modal').classList.remove('hidden');
   });
   document.getElementById('btn-config-cancel').addEventListener('click', () => {
     document.getElementById('config-modal').classList.add('hidden');
   });
-  document.getElementById('btn-switch-user').addEventListener('click', async () => {
-    await signOutUser();
-    location.reload();
-  });
-  document.getElementById('btn-signout').addEventListener('click', async () => {
-    await signOutUser();
-    location.reload();
-  });
+  document.getElementById('btn-switch-user').addEventListener('click', async () => { await signOutUser(); location.reload(); });
+  document.getElementById('btn-signout').addEventListener('click', async () => { await signOutUser(); location.reload(); });
 
   document.getElementById('review-cancel').addEventListener('click', () => {
     document.getElementById('review-modal').classList.add('hidden');
   });
   document.getElementById('levels-close').addEventListener('click', () => {
     document.getElementById('levels-modal').classList.add('hidden');
-    // Refresca el panel de padres si está abierto
     if (state.screen === 'PARENT') {
       openParentPanel(state.user);
     }
   });
 
-  buildNumpad('numpad-A', pressA, clearA);
-  buildNumpad('numpad-C', pressC, clearC);
-
   document.getElementById('btn-reveal').addEventListener('click', revealSolution);
-  document.getElementById('exam-table-select').value = state.examTable;
-  document.getElementById('exam-table-select').addEventListener('change', (e) => {
-    state.examTable = parseInt(e.target.value, 10);
-    nextCard();
-  });
 
   document.getElementById('btn-parent-panel').addEventListener('click', () => openParentPanel(state.user));
 }
@@ -258,28 +227,21 @@ function switchMode(mode) {
   nextCard();
 }
 
-// ============ JUEGO ============
 function nextCard() {
-  if (state.mode === 'C') {
-    const b = Math.floor(Math.random() * 12) + 1;
-    const t = getTopic(state.activeTopicId);
-    state.currentCard = { topicId: state.activeTopicId, op: { a: state.examTable, b }, topic: t };
-  } else {
-    const next = pickNextWithStats(
-      state.progress.plan,
-      topicsMap,
-      state.progress.stats || {},
-      state.forcedTopicId
-    );
-    if (!next) {
-      // Fallback: nada configurado
-      showScreen('HOME');
-      renderTopicsGrid();
-      return;
-    }
-    const t = getTopic(next.topicId);
-    state.currentCard = { topicId: next.topicId, op: next.op, topic: t };
+  const next = pickNextWithStats(
+    state.progress.plan,
+    topicsMap,
+    state.progress.stats || {},
+    state.forcedTopicId
+  );
+
+  if (!next) {
+    showScreen('HOME');
+    renderTopicsGrid();
+    return;
   }
+
+  state.currentCard = next;
   state.currentTyped = '';
   state.hasTouchedFirstKey = false;
   state.firstTouchTime = 0;
@@ -289,34 +251,86 @@ function nextCard() {
 }
 
 function renderCard() {
-  const { op, topic } = state.currentCard;
-  const tag = topic.nombre.toUpperCase();
+  const c = state.currentCard;
+  const tag = c.topic.nombre.toUpperCase();
 
   if (state.mode === 'A') {
     document.getElementById('card-topic-tag').textContent = tag;
-    document.getElementById('modeA-op').innerHTML = topic.render(op);
-    document.getElementById('modeA-display').textContent = '?';
-    document.getElementById('modeA-hint').textContent = 'Introduce el resultado';
+    renderPromptInto('modeA-op', c);
+    document.getElementById('modeA-hint').textContent =
+      c.inputMode === 'choice' ? 'Choose the correct answer' : 'Introduce el resultado';
     document.getElementById('modeA-hint').className = 'text-xs text-slate-400 mt-1 min-h-[1.25rem]';
     document.getElementById('btn-reveal').classList.add('hidden');
+    renderAnswerInput('A', c);
   } else if (state.mode === 'B') {
     document.getElementById('card-topic-tag-B').textContent = tag;
-    document.getElementById('modeB-op').innerHTML = topic.render(op, 'text-purple-400');
+    renderPromptInto('modeB-op', c);
     renderQuizOptions();
   } else if (state.mode === 'C') {
-    document.getElementById('modeC-op').innerHTML = topic.render(op, 'text-emerald-400');
-    document.getElementById('modeC-display').textContent = '?';
-    document.getElementById('modeC-hint').textContent = 'Escribe la respuesta';
+    renderPromptInto('modeC-op', c);
+    document.getElementById('modeC-hint').textContent =
+      c.inputMode === 'choice' ? 'Choose the correct answer' : 'Escribe la respuesta';
     document.getElementById('modeC-hint').className = 'text-xs text-slate-400 mt-1 min-h-[1.25rem]';
+    renderAnswerInput('C', c);
+  }
+}
+
+function renderPromptInto(elId, c) {
+  const el = document.getElementById(elId);
+  if (c.topic.render) {
+    el.innerHTML = c.topic.render(c.item, 'text-indigo-400');
+  } else {
+    el.textContent = c.item.prompt;
+  }
+}
+
+// Renderiza el área de respuesta:
+// - numeric: numpad + display "?"
+// - choice: botones generados desde item.choices
+function renderAnswerInput(slot, c) {
+  const displayId = slot === 'A' ? 'modeA-display' : 'modeC-display';
+  const numpadId  = slot === 'A' ? 'numpad-A'     : 'numpad-C';
+
+  const display = document.getElementById(displayId);
+  const numpad = document.getElementById(numpadId);
+
+  if (c.inputMode === 'choice') {
+    display.classList.add('hidden');
+    numpad.className = 'grid grid-cols-2 gap-2 mt-3 w-full';
+    numpad.innerHTML = '';
+    for (const choice of c.item.choices) {
+      const btn = document.createElement('button');
+      btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xl font-black py-4 rounded-2xl active:bg-indigo-600 transition text-white';
+      btn.textContent = choice;
+      btn.onclick = () => {
+        if (state.locked) return;
+        registerFirstTouch();
+        evaluate(choice);
+      };
+      numpad.appendChild(btn);
+    }
+  } else {
+    display.classList.remove('hidden');
+    display.textContent = '?';
+    numpad.className = 'w-full max-w-xs grid grid-cols-3 gap-2 mt-5';
+    buildNumpad(numpadId, slot === 'A' ? pressA : pressC, slot === 'A' ? clearA : clearC);
   }
 }
 
 function renderQuizOptions() {
-  const { op, topic } = state.currentCard;
-  const correct = topic.solve(op);
-  const opts = topic.distractors(op, correct);
+  const c = state.currentCard;
   const cont = document.getElementById('quiz-options');
   cont.innerHTML = '';
+
+  // En quiz, si el inputMode es numeric, generamos distractores numéricos.
+  // Si es choice, usamos las choices del propio item.
+  let opts;
+  if (c.inputMode === 'choice') {
+    opts = c.item.choices;
+  } else {
+    opts = generateNumericDistractors(c.item.answer);
+  }
+
   for (const v of opts) {
     const btn = document.createElement('button');
     btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-2xl font-black py-4 rounded-2xl active:bg-purple-600 transition text-white shadow-lg';
@@ -328,6 +342,15 @@ function renderQuizOptions() {
     };
     cont.appendChild(btn);
   }
+}
+
+function generateNumericDistractors(correct) {
+  const s = new Set([correct]);
+  while (s.size < 4) {
+    const delta = (Math.floor(Math.random() * 5) + 1) * (Math.random() < 0.5 ? 1 : -1);
+    s.add(Math.max(1, correct + delta));
+  }
+  return [...s].sort(() => Math.random() - 0.5);
 }
 
 function buildNumpad(containerId, onDigit, onClear) {
@@ -363,8 +386,7 @@ function registerFirstTouch() {
 
 function pressA(d) {
   registerFirstTouch();
-  const { op, topic } = state.currentCard;
-  const expected = String(topic.solve(op));
+  const expected = String(state.currentCard.item.answer);
   if (state.currentTyped.length < expected.length) {
     state.currentTyped += d;
     document.getElementById('modeA-display').textContent = state.currentTyped;
@@ -381,8 +403,7 @@ function clearA(backspace) {
 
 function pressC(d) {
   registerFirstTouch();
-  const { op, topic } = state.currentCard;
-  const expected = String(topic.solve(op));
+  const expected = String(state.currentCard.item.answer);
   if (state.currentTyped.length < expected.length) {
     state.currentTyped += d;
     document.getElementById('modeC-display').textContent = state.currentTyped;
@@ -398,20 +419,20 @@ function clearC(backspace) {
 }
 
 function revealSolution() {
-  const { op, topic } = state.currentCard;
-  const correct = topic.solve(op);
-  document.getElementById('modeA-hint').innerHTML = `${topic.renderPlain(op)} = ${correct}`;
+  const c = state.currentCard;
+  const correct = c.item.answer;
+  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${correct}</strong>`;
   document.getElementById('modeA-hint').className = 'text-sm text-indigo-300 font-bold mt-1 min-h-[1.25rem]';
 }
 
 async function evaluate(userAns) {
   if (state.locked) return;
-  const { op, topic, topicId } = state.currentCard;
-  const correct = topic.solve(op);
-  const isCorrect = userAns === correct;
+  const c = state.currentCard;
+  const correct = c.item.answer;
+  const isCorrect = String(userAns) === String(correct);
   const latency = state.firstTouchTime > 0 ? state.firstTouchTime : (Date.now() - state.cardStartTime);
 
-  recordAnswer(state.progress.stats, topicId, topic, op, isCorrect, latency);
+  recordAnswer(state.progress.stats, c.topicId, c.levelId, c.topic, c.item, isCorrect, latency);
   saveProgress(state.user.uid, state.progress);
 
   const container = state.mode === 'A' ? 'card-container'
@@ -437,11 +458,17 @@ async function evaluate(userAns) {
       document.getElementById('modeA-hint').textContent = '¡Casi! Inténtalo de nuevo';
       document.getElementById('modeA-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
       document.getElementById('btn-reveal').classList.remove('hidden');
-      clearA(false);
+      state.currentTyped = '';
+      if (c.inputMode === 'numeric') {
+        document.getElementById('modeA-display').textContent = '?';
+      }
     } else if (state.mode === 'C') {
       document.getElementById('modeC-hint').textContent = '¡Error!';
       document.getElementById('modeC-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
-      clearC(false);
+      state.currentTyped = '';
+      if (c.inputMode === 'numeric') {
+        document.getElementById('modeC-display').textContent = '?';
+      }
     } else if (state.mode === 'B') {
       state.locked = true;
       setTimeout(() => nextCard(), 700);
@@ -455,7 +482,6 @@ function updateHUD() {
   document.getElementById('hud-streak').textContent = `🔥 ${state.session.streak}`;
 }
 
-// ============ PANEL PADRES ============
 let parentPanelInited = false;
 function openParentPanel(user) {
   if (!parentPanelInited) {
@@ -467,7 +493,5 @@ function openParentPanel(user) {
     });
     parentPanelInited = true;
   }
-  // Dispara el render llamando a la función interna del módulo
-  // (lo hacemos vía evento personalizado para no acoplar)
   window.dispatchEvent(new CustomEvent('mf:open-parent'));
 }
