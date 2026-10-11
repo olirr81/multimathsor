@@ -605,4 +605,143 @@ function exportXLSX(uid, prog) {
   const totalOpsAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.ops, 0);
   const totalCorrectAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.correct, 0);
   const totalErrorsAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.errors, 0);
-  const totalMsAll = Object.values(kpis.byTopic || {}).
+  const totalMsAll = Object.values(kpis.byTopic || {}).reduce((s, t) => s + t.ms, 0);
+  const accuracyAll = totalOpsAll > 0 ? Math.round((totalCorrectAll / totalOpsAll) * 100) : 0;
+
+  const resumenRows = [
+    { Métrica: 'Total operaciones (histórico)', Valor: totalOpsAll },
+    { Métrica: 'Aciertos', Valor: totalCorrectAll },
+    { Métrica: 'Fallos', Valor: totalErrorsAll },
+    { Métrica: 'Precisión %', Valor: accuracyAll },
+    { Métrica: 'Tiempo total activo (min)', Valor: Math.round(totalMsAll / 60000) },
+    { Métrica: 'Sesiones guardadas', Valor: sessions.length },
+    { Métrica: 'Fecha de exportación', Valor: new Date().toLocaleString('es-ES') }
+  ];
+  const wsResumen = XLSX.utils.json_to_sheet(resumenRows);
+  wsResumen['!cols'] = [{ wch: 32 }, { wch: 24 }];
+  XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
+
+  // -------- HOJA 2: POR TEMA --------
+  const topicRows = Object.entries(kpis.byTopic || {}).map(([topicId, t]) => ({
+    Tema: topicId,
+    Operaciones: t.ops,
+    Aciertos: t.correct,
+    Fallos: t.errors,
+    'Precisión %': t.ops > 0 ? Math.round((t.correct / t.ops) * 100) : 0,
+    'Tiempo activo (s)': Math.round(t.ms / 1000),
+    'ms/op': t.ops > 0 ? Math.round(t.ms / t.ops) : 0
+  }));
+  if (topicRows.length === 0) topicRows.push({ Tema: '(sin datos)' });
+  const wsTopics = XLSX.utils.json_to_sheet(topicRows);
+  wsTopics['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wsTopics, 'Por tema');
+
+  // -------- HOJA 3: POR NIVEL --------
+  const levelRows = Object.entries(kpis.byLevel || {}).map(([key, l]) => {
+    const [topicId, levelId] = key.split(':');
+    return {
+      Tema: topicId,
+      Nivel: levelId,
+      Operaciones: l.ops,
+      Aciertos: l.correct,
+      Fallos: l.errors,
+      'Precisión %': l.ops > 0 ? Math.round((l.correct / l.ops) * 100) : 0,
+      'ms/op': l.ops > 0 ? Math.round(l.ms / l.ops) : 0
+    };
+  }).sort((a, b) => a['Precisión %'] - b['Precisión %']);
+  if (levelRows.length === 0) levelRows.push({ Tema: '(sin datos)' });
+  const wsLevels = XLSX.utils.json_to_sheet(levelRows);
+  wsLevels['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wsLevels, 'Por nivel');
+
+  // -------- HOJA 4: EVOLUCIÓN DIARIA --------
+  const dailyRows = Object.entries(kpis.daily || {}).map(([date, d]) => ({
+    Fecha: date,
+    Operaciones: d.ops,
+    Aciertos: d.correct,
+    Fallos: d.errors,
+    'Precisión %': d.ops > 0 ? Math.round((d.correct / d.ops) * 100) : 0,
+    'Tiempo activo (min)': Math.round(d.ms / 60000)
+  })).sort((a, b) => a.Fecha.localeCompare(b.Fecha));
+  if (dailyRows.length === 0) dailyRows.push({ Fecha: '(sin datos)' });
+  const wsDaily = XLSX.utils.json_to_sheet(dailyRows);
+  wsDaily['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsDaily, 'Evolución diaria');
+
+  // -------- HOJA 5: SESIONES --------
+  const sessionRows = sessions.map(s => ({
+    ID: s.id,
+    Fecha: new Date(s.startedAt).toLocaleString('es-ES'),
+    Tema: s.topicName,
+    'Duración total (s)': s.durationSec,
+    'Duración activa (s)': s.activeSec,
+    Operaciones: s.operations,
+    Aciertos: s.correct,
+    Fallos: s.errors,
+    'Precisión %': s.accuracy,
+    'ms/op': s.avgLatencyMs,
+    Modos: (s.modes || []).join(',')
+  }));
+  if (sessionRows.length === 0) sessionRows.push({ ID: '(sin sesiones)' });
+  const wsSessions = XLSX.utils.json_to_sheet(sessionRows);
+  wsSessions['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wsSessions, 'Sesiones');
+
+  // -------- HOJA 6: DETALLE OPERACIONES --------
+  const attemptRows = [];
+  for (const s of sessions) {
+    for (const a of s.attempts || []) {
+      attemptRows.push({
+        Fecha: new Date(a.at).toLocaleString('es-ES'),
+        Tema: s.topicName,
+        Nivel: a.levelId,
+        Pregunta: a.prompt,
+        'Respuesta dada': a.given,
+        'Respuesta correcta': a.answer,
+        '¿Acertó?': a.ok ? 'Sí' : 'No',
+        'Tiempo (ms)': a.ms,
+        Modo: a.mode
+      });
+    }
+  }
+  if (attemptRows.length === 0) attemptRows.push({ Fecha: '(sin detalle)' });
+  const wsAttempts = XLSX.utils.json_to_sheet(attemptRows);
+  wsAttempts['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 40 }, { wch: 16 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, wsAttempts, 'Detalle ops');
+
+  // -------- HOJA 7: FALLOS --------
+  const fallosRows = attemptRows.filter(r => r['¿Acertó?'] === 'No');
+  if (fallosRows.length === 0) fallosRows.push({ Fecha: '(sin fallos)' });
+  const wsFallos = XLSX.utils.json_to_sheet(fallosRows);
+  wsFallos['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 40 }, { wch: 16 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, wsFallos, 'Fallos');
+
+  // Nombre del archivo con nombre y fecha
+  const displayName = (currentViewUid === currentUserId) ? 'progenitor' : 'hijo';
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `MultiFlash_${displayName}_${date}.xlsx`;
+
+  XLSX.writeFile(wb, filename);
+}
+
+// ============================================================
+// UTILIDADES
+// ============================================================
+function formatDate(ms) {
+  const d = new Date(ms);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month} ${hh}:${mm}`;
+}
+
+function escapeHtml(s) {
+  if (s === undefined || s === null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
