@@ -24,7 +24,8 @@ const state = {
   firstTouchTime: 0,
   hasTouchedFirstKey: false,
   locked: false,
-  tracker: null
+  tracker: null,
+  currentStepIndex: 0 // <--- NUEVO: para los problemas de doble paso
 };
 
 initUI();
@@ -260,7 +261,6 @@ function initUI() {
     await signOutUser(); location.reload();
   });
 
-  // --- Cambiar mi contraseña ---
   document.getElementById('btn-change-own-pass').addEventListener('click', () => {
     document.getElementById('config-modal').classList.add('hidden');
     document.getElementById('change-own-pass-form').reset();
@@ -347,12 +347,14 @@ function nextCard() {
     return;
   }
   if (!state.tracker) trackerOpen(next.topicId, next.topic.nombre);
+  
   state.currentCard = next;
   state.currentTyped = '';
   state.hasTouchedFirstKey = false;
   state.firstTouchTime = 0;
   state.cardStartTime = Date.now();
   state.locked = false;
+  state.currentStepIndex = 0; // Reiniciar paso
   renderCard();
 }
 
@@ -363,7 +365,7 @@ function renderCard() {
     document.getElementById('card-topic-tag').textContent = tag;
     renderPromptInto('modeA-op', c);
     document.getElementById('modeA-hint').textContent =
-      c.inputMode === 'choice' ? 'Choose the correct answer' : 'Introduce el resultado';
+      (c.inputMode === 'choice' || c.item.steps) ? 'Choose the correct answer' : 'Type the result';
     document.getElementById('modeA-hint').className = 'text-xs text-slate-400 mt-1 min-h-[1.25rem]';
     document.getElementById('btn-reveal').classList.add('hidden');
     renderAnswerInput('A', c);
@@ -374,7 +376,7 @@ function renderCard() {
   } else if (state.mode === 'C') {
     renderPromptInto('modeC-op', c);
     document.getElementById('modeC-hint').textContent =
-      c.inputMode === 'choice' ? 'Choose the correct answer' : 'Escribe la respuesta';
+      (c.inputMode === 'choice' || c.item.steps) ? 'Choose the correct answer' : 'Type the result';
     document.getElementById('modeC-hint').className = 'text-xs text-slate-400 mt-1 min-h-[1.25rem]';
     renderAnswerInput('C', c);
   }
@@ -382,8 +384,22 @@ function renderCard() {
 
 function renderPromptInto(elId, c) {
   const el = document.getElementById(elId);
-  if (c.topic.render) el.innerHTML = c.topic.render(c.item, 'text-indigo-400');
-  else el.textContent = c.item.prompt;
+  let html = '';
+  
+  // 1. Render principal (la historia)
+  if (c.topic.render) {
+    html += c.topic.render(c.item, 'text-indigo-400');
+  } else {
+    html += `<div class="text-xl text-white">${c.item.prompt}</div>`;
+  }
+  
+  // 2. Render del paso actual (si existe)
+  if (c.item.steps && state.mode !== 'B') {
+    const step = c.item.steps[state.currentStepIndex];
+    html += `<div class="mt-5 text-sm font-bold text-amber-300">${step.prompt}</div>`;
+  }
+  
+  el.innerHTML = html;
 }
 
 function renderAnswerInput(slot, c) {
@@ -391,13 +407,27 @@ function renderAnswerInput(slot, c) {
   const numpadId  = slot === 'A' ? 'numpad-A'     : 'numpad-C';
   const display = document.getElementById(displayId);
   const numpad = document.getElementById(numpadId);
-  if (c.inputMode === 'choice') {
+
+  let inputMode = c.inputMode;
+  let choices = c.item.choices;
+
+  if (c.item.steps) {
+    const step = c.item.steps[state.currentStepIndex];
+    inputMode = step.type;
+    choices = step.choices;
+  }
+
+  if (inputMode === 'choice' || inputMode === 'multi-step') {
     display.classList.add('hidden');
     numpad.className = 'grid grid-cols-2 gap-2 mt-3 w-full';
     numpad.innerHTML = '';
-    for (const choice of c.item.choices) {
+    // Si es multi-step pero ya estamos en el paso numérico
+    if (inputMode === 'multi-step') return; 
+
+    for (const choice of choices) {
       const btn = document.createElement('button');
-      btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xl font-black py-4 rounded-2xl active:bg-indigo-600 transition text-white';
+      // Letra un poco más pequeña para operaciones como "1347 + 1486"
+      btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-lg font-black py-4 rounded-2xl active:bg-indigo-600 transition text-white';
       btn.textContent = choice;
       btn.onclick = () => { if (state.locked) return; registerFirstTouch(); evaluate(choice); };
       numpad.appendChild(btn);
@@ -414,13 +444,21 @@ function renderQuizOptions() {
   const c = state.currentCard;
   const cont = document.getElementById('quiz-options');
   cont.innerHTML = '';
-  let opts;
-  if (c.inputMode === 'choice') opts = c.item.choices;
-  else if (typeof c.topic.distractors === 'function') opts = c.topic.distractors(c.item);
-  else opts = generateNumericDistractors(c.item.answer);
+  
+  let opts = [];
+  if (c.item.steps) {
+    opts = c.item.steps[state.currentStepIndex].choices;
+  } else if (c.inputMode === 'choice') {
+    opts = c.item.choices;
+  } else if (typeof c.topic.distractors === 'function') {
+    opts = c.topic.distractors(c.item);
+  } else {
+    opts = generateNumericDistractors(c.item.answer);
+  }
+
   for (const v of opts) {
     const btn = document.createElement('button');
-    btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-2xl font-black py-4 rounded-2xl active:bg-purple-600 transition text-white shadow-lg';
+    btn.className = 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xl font-black py-4 rounded-2xl active:bg-purple-600 transition text-white shadow-lg';
     btn.textContent = v;
     btn.onclick = () => { if (state.locked) return; registerFirstTouch(); evaluate(v); };
     cont.appendChild(btn);
@@ -496,20 +534,32 @@ function clearC(backspace) {
 
 function revealSolution() {
   const c = state.currentCard;
-  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${c.item.answer}</strong>`;
+  const expected = c.item.steps ? c.item.steps[state.currentStepIndex].answer : c.item.answer;
+  document.getElementById('modeA-hint').innerHTML = `Answer: <strong>${expected}</strong>`;
   document.getElementById('modeA-hint').className = 'text-sm text-indigo-300 font-bold mt-1 min-h-[1.25rem]';
 }
 
 async function evaluate(userAns) {
   if (state.locked) return;
   const c = state.currentCard;
-  const correct = c.item.answer;
-  const isCorrect = String(userAns) === String(correct);
+  let isCorrect = false;
+  let expectedAnswer = c.item.answer;
+  let expectedForStep = c.item.answer;
+
+  if (c.item.steps) {
+    const step = c.item.steps[state.currentStepIndex];
+    expectedForStep = step.answer;
+    isCorrect = String(userAns) === String(step.answer);
+  } else {
+    isCorrect = String(userAns) === String(c.item.answer);
+  }
+
   const latency = state.firstTouchTime > 0 ? state.firstTouchTime : (Date.now() - state.cardStartTime);
 
+  // Registrar intento
   recordAnswer(state.progress.stats, c.topicId, c.levelId, c.topic, c.item, isCorrect, latency);
   trackerAddResult({
-    levelId: c.levelId, prompt: c.item.prompt, answer: correct, given: userAns,
+    levelId: c.levelId, prompt: c.item.prompt, answer: expectedForStep, given: userAns,
     ok: isCorrect, ms: latency, mode: state.mode, at: Date.now()
   });
   saveProgress(state.user.uid, state.progress);
@@ -517,7 +567,18 @@ async function evaluate(userAns) {
   const container = state.mode === 'A' ? 'card-container'
                    : state.mode === 'B' ? 'quiz-options'
                    : 'exam-container';
+
   if (isCorrect) {
+    // Si es multi-step y no es el último paso
+    if (c.item.steps && state.currentStepIndex < c.item.steps.length - 1) {
+      state.currentStepIndex++;
+      state.currentTyped = '';
+      state.hasTouchedFirstKey = false; // Resetear el primer toque para el paso 2
+      renderCard(); // Vuelve a renderizar la tarjeta con el paso 2
+      return; // No avanza a la siguiente tarjeta todavía
+    }
+
+    // Si es el último paso o tarjeta de un solo paso
     state.session.correct++; state.session.streak++; updateHUD();
     if (window.confetti) confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
     state.locked = true;
@@ -527,17 +588,22 @@ async function evaluate(userAns) {
     const el = document.getElementById(container);
     el.classList.add('animate-shake');
     setTimeout(() => el.classList.remove('animate-shake'), 400);
+    
     if (state.mode === 'A') {
-      document.getElementById('modeA-hint').textContent = '¡Casi! Inténtalo de nuevo';
+      document.getElementById('modeA-hint').textContent = 'Try again!';
       document.getElementById('modeA-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
       document.getElementById('btn-reveal').classList.remove('hidden');
       state.currentTyped = '';
-      if (c.inputMode === 'numeric') document.getElementById('modeA-display').textContent = '?';
+      if (c.inputMode === 'numeric' && (!c.item.steps || c.item.steps[state.currentStepIndex].type === 'numeric')) {
+        document.getElementById('modeA-display').textContent = '?';
+      }
     } else if (state.mode === 'C') {
-      document.getElementById('modeC-hint').textContent = '¡Error!';
+      document.getElementById('modeC-hint').textContent = 'Try again!';
       document.getElementById('modeC-hint').className = 'text-xs text-rose-400 font-bold mt-1 min-h-[1.25rem]';
       state.currentTyped = '';
-      if (c.inputMode === 'numeric') document.getElementById('modeC-display').textContent = '?';
+      if (c.inputMode === 'numeric' && (!c.item.steps || c.item.steps[state.currentStepIndex].type === 'numeric')) {
+        document.getElementById('modeC-display').textContent = '?';
+      }
     } else if (state.mode === 'B') {
       state.locked = true;
       setTimeout(() => nextCard(), 700);
