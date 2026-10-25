@@ -2,16 +2,38 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Genera un layout vertical bonito para sumas
+// Genera una tabla HTML perfecta para alinear las operaciones
 function formatVertical(a, b, op) {
-  const aStr = String(a);
-  const bStr = String(b);
+  // Rellenamos con espacios a la izquierda hasta tener 4 dígitos (para alinear miles)
+  const aDigits = String(a).padStart(4, ' ').split('');
+  const bDigits = String(b).padStart(4, ' ').split('');
+
+  let html = '<table class="mx-auto text-4xl sm:text-5xl font-mono font-bold text-white border-collapse my-4">';
+  html += '<tbody>';
   
-  const paddedA = '  ' + aStr.split('').join(' ');
-  const paddedB = op + ' ' + bStr.split('').join(' ');
-  const line = '─'.repeat(paddedB.length + 1);
-  
-  return `<div class="text-4xl sm:text-5xl font-mono leading-tight tracking-wider text-white whitespace-pre text-left my-4">${paddedA}\n${paddedB}\n${line}</div>`;
+  // Fila 1 (Número A)
+  html += '<tr>';
+  html += `<td class="px-1 sm:px-2 text-right opacity-0">${op}</td>`; // Celda invisible para alinear
+  aDigits.forEach(d => {
+    html += `<td class="px-1 sm:px-2 text-center w-10 sm:w-14">${d === ' ' ? '&nbsp;' : d}</td>`;
+  });
+  html += '</tr>';
+
+  // Fila 2 (Operador y Número B)
+  html += '<tr>';
+  html += `<td class="px-1 sm:px-2 text-right text-2xl sm:text-3xl pb-1">${op}</td>`;
+  bDigits.forEach(d => {
+    html += `<td class="px-1 sm:px-2 text-center w-10 sm:w-14">${d === ' ' ? '&nbsp;' : d}</td>`;
+  });
+  html += '</tr>';
+
+  // Fila 3 (Línea divisoria)
+  html += '<tr>';
+  html += `<td colspan="5" class="border-t-4 border-slate-500 pt-2"></td>`;
+  html += '</tr>';
+
+  html += '</tbody></table>';
+  return html;
 }
 
 export default {
@@ -39,7 +61,6 @@ export default {
         const aO = a % 10, bO = b % 10;
         const aT = Math.floor(a / 10) % 10, bT = Math.floor(b / 10) % 10;
         const aH = Math.floor(a / 100), bH = Math.floor(b / 100);
-        // Exige llevada en unidades, pero no en decenas ni centenas
         if (aO + bO >= 10 && aT + bT + 1 < 10 && aH + bH < 10) isValid = true;
         
       } else if (levelId === 'add-4d') {
@@ -48,7 +69,6 @@ export default {
         const aO = a % 10, bO = b % 10;
         const aT = Math.floor(a / 10) % 10, bT = Math.floor(b / 10) % 10;
         const aH = Math.floor(a / 100) % 10, bH = Math.floor(b / 100) % 10;
-        // Llevada en unidades, pero no en decenas ni centenas
         if (aO + bO >= 10 && aT + bT + 1 < 10 && aH + bH < 10) isValid = true;
         
       } else {
@@ -56,7 +76,6 @@ export default {
         b = randInt(1000, 9999 - a);
         const aO = a % 10, bO = b % 10;
         const aT = Math.floor(a / 10) % 10, bT = Math.floor(b / 10) % 10;
-        // Llevada en unidades y decenas (múltiples)
         if (aO + bO >= 10 && aT + bT + 1 >= 10) isValid = true;
       }
     }
@@ -86,7 +105,6 @@ export default {
 
   distractors(item) {
     const s = new Set([item.answer]);
-    // Distractores típicos: sumar mal las llevadas
     s.add(item.answer - 10);
     s.add(item.answer + 100);
     s.add(item.answer - 1);
